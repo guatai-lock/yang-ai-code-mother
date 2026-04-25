@@ -12,7 +12,6 @@ import com.guatai.yangaicodemother.service.UserService;
 import com.mybatisflex.core.query.QueryWrapper;
 import com.mybatisflex.spring.service.impl.ServiceImpl;
 import com.guatai.yangaicodemother.model.entity.User;
-import com.guatai.yangaicodemother.mapper.UserMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.util.DigestUtils;
