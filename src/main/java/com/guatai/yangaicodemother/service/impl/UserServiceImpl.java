@@ -4,6 +4,7 @@ import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.StrUtil;
 import com.guatai.yangaicodemother.exception.BusinessException;
 import com.guatai.yangaicodemother.exception.ErrorCode;
+import com.guatai.yangaicodemother.mapper.UserMapper;
 import com.guatai.yangaicodemother.model.dto.user.UserQueryRequest;
 import com.guatai.yangaicodemother.model.enums.UserRoleEnum;
 import com.guatai.yangaicodemother.model.vo.LoginUserVO;
@@ -25,7 +26,7 @@ import static com.guatai.yangaicodemother.common.UserConstant.USER_LOGIN_STATE;
  *
  */
 @Service
-public class UserServiceImpl extends ServiceImpl<UserMapper, User>  implements UserService {
+public class UserServiceImpl extends ServiceImpl<UserMapper,User>  implements UserService {
     @Override
     public long userRegister(String userAccount, String userPassword, String checkPassword) {
         // 1. 校验

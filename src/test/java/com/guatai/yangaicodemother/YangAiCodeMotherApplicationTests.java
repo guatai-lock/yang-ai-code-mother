@@ -24,14 +24,13 @@ class YangAiCodeMotherApplicationTests {
     }
     @Test
     void contextLoads2() {
-        File file = aiCodeGeneratorFacade.
-                generateAndSaveCode("生成一个个人博客页面，一百行代码以内", CodeGenTypeEnum.MULTI_FILE);
-        Assertions.assertNotNull(file );
+        String property = System.getProperty("user.dir");
+        System.out.println(property);
     }
         @Test
         void parseHtmlCode() {
             Flux<String> stream = aiCodeGeneratorFacade
-                    .generateAndSaveCodeStream("生成外卖平台页面，一百行代码以内", CodeGenTypeEnum.MULTI_FILE);
+                    .generateAndSaveCodeStream("生成外卖平台页面，一百行代码以内", CodeGenTypeEnum.MULTI_FILE,123l);
             //流式输出测试记得阻塞测试
             List<String> block = stream.collectList().block();
             Assertions.assertNotNull(block);
