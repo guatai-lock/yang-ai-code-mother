@@ -1,5 +1,4 @@
 package com.guatai.yangaicodemother.core.saver;
-
 /**
  * ClassName: muly
  * Package: com.guatai.yangaicodemother.core.saver
@@ -9,13 +8,11 @@ package com.guatai.yangaicodemother.core.saver;
  * @Create 2026/4/25 下午3:11
  * @Version 1.0
  */
-
 import cn.hutool.core.util.StrUtil;
 import com.guatai.yangaicodemother.ai.model.MultiFileCodeResult;
 import com.guatai.yangaicodemother.exception.BusinessException;
 import com.guatai.yangaicodemother.exception.ErrorCode;
 import com.guatai.yangaicodemother.model.enums.CodeGenTypeEnum;
-
 /**
  * 多文件代码保存器
  *
@@ -37,7 +34,6 @@ public class MultiFileCodeFileSaverTemplate extends CodeFileSaverTemplate<MultiF
         // 保存 JavaScript 文件
         writeToFile(baseDirPath, "script.js", result.getJsCode());
     }
-
     @Override
     protected void validateInput(MultiFileCodeResult result) {
         super.validateInput(result);
