@@ -80,7 +80,6 @@ public class ChatHistoryServiceImpl extends ServiceImpl<ChatHistoryMapper, ChatH
         // 查询数据
         return this.page(Page.of(1, pageSize), queryWrapper);
     }
-
     /**
      * 获取查询包装类
      *
