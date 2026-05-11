@@ -1,5 +1,6 @@
 package com.guatai.yangaicodemother.service;
 
+import com.guatai.yangaicodemother.model.dto.app.AppAddRequest;
 import com.guatai.yangaicodemother.model.dto.app.AppQueryRequest;
 import com.guatai.yangaicodemother.model.entity.User;
 import com.guatai.yangaicodemother.model.vo.AppVO;
@@ -15,6 +16,13 @@ import java.util.List;
  *
  */
 public interface AppService extends IService<App> {
+    /**
+     * 创建应用
+     * @param appAddRequest 应用添加请求
+     * @param loginUser 登录用户
+     * @return 应用id
+     */
+    Long createApp(AppAddRequest appAddRequest, User loginUser);
 
     /**
      * 根据应用获取 AppVO
@@ -58,4 +66,11 @@ public interface AppService extends IService<App> {
      * @return
      */
     String deployApp(Long appId, User loginUser);
+    /**
+     * 生成应用截图
+     *
+     * @param appId 应用id
+     * @param appUrl 应用url
+     */
+    void generateAppScreenshotAsync(Long appId, String appUrl);
 }
