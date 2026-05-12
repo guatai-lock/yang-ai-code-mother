@@ -11,7 +11,6 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import reactor.core.publisher.Flux;
-import java.io.File;
 import java.util.List;
 @SpringBootTest
 @Slf4j
@@ -75,5 +74,3 @@ class YangAiCodeMotherApplicationTests {
             log.info("用户需求: {} -> {}", userPrompt, result.getValue());
         }
     }
-
-
