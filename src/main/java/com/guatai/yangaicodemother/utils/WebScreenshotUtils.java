@@ -1,5 +1,4 @@
 package com.guatai.yangaicodemother.utils;
-
 import cn.hutool.core.img.ImgUtil;
 import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.lang.UUID;
@@ -16,10 +15,7 @@ import org.openqa.selenium.TakesScreenshot;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
-import org.openqa.selenium.edge.EdgeDriver;
-import org.openqa.selenium.edge.EdgeOptions;
 import org.openqa.selenium.support.ui.WebDriverWait;
-
 import java.io.File;
 import java.time.Duration;
 
@@ -81,7 +77,6 @@ public class WebScreenshotUtils {
             return null;
         }
     }
-
     /**
      * 初始化 Chrome 浏览器驱动
      */
