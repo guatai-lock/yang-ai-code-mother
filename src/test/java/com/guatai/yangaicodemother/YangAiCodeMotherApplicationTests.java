@@ -1,5 +1,6 @@
 package com.guatai.yangaicodemother;
 import com.guatai.yangaicodemother.ai.AiCodeGenTypeRoutingService;
+import com.guatai.yangaicodemother.ai.AiCodeGenTypeRoutingServiceFactory;
 import com.guatai.yangaicodemother.ai.AiCodeGeneratorService;
 import com.guatai.yangaicodemother.ai.model.MultiFileCodeResult;
 import com.guatai.yangaicodemother.core.AiCodeGeneratorFacade;
@@ -73,4 +74,32 @@ class YangAiCodeMotherApplicationTests {
             result = aiCodeGenTypeRoutingService.routeCodeGenType(userPrompt);
             log.info("用户需求: {} -> {}", userPrompt, result.getValue());
         }
+
+        @Resource
+        private AiCodeGenTypeRoutingServiceFactory routingServiceFactory;
+
+        @Test
+        public void testConcurrentRoutingCalls() throws InterruptedException {
+            String[] prompts = {
+                    "做一个简单的HTML页面",
+                    "做一个多页面网站项目",
+                    "做一个Vue管理系统"
+            };
+            // 使用虚拟线程并发执行
+            Thread[] threads = new Thread[prompts.length];
+            for (int i = 0; i < prompts.length; i++) {
+                final String prompt = prompts[i];
+                final int index = i + 1;
+                threads[i] = Thread.ofVirtual().start(() -> {
+                    AiCodeGenTypeRoutingService service = routingServiceFactory.createAiCodeGenTypeRoutingService();
+                    var result = service.routeCodeGenType(prompt);
+                    log.info("线程 {}: {} -> {}", index, prompt, result.getValue());
+                });
+            }
+            // 等待所有任务完成
+            for (Thread thread : threads) {
+                thread.join();
+            }
+        }
     }
+

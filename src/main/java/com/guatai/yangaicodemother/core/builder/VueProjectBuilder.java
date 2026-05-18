@@ -1,9 +1,7 @@
 package com.guatai.yangaicodemother.core.builder;
-
 import cn.hutool.core.util.RuntimeUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
-
 import java.io.File;
 import java.util.concurrent.TimeUnit;
 
@@ -19,7 +17,6 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 @Component
 public class VueProjectBuilder {
-
         /**
          * 异步构建项目（不阻塞主流程）
          *
@@ -73,7 +70,6 @@ public class VueProjectBuilder {
         log.info("Vue 项目构建成功，dist 目录: {}", distDir.getAbsolutePath());
         return true;
     }
-
     /**
      * 执行 npm install 命令
      */
@@ -138,5 +134,4 @@ public class VueProjectBuilder {
             return false;
         }
     }
-
 }
