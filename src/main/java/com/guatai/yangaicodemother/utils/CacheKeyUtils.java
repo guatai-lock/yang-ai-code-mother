@@ -1,5 +1,4 @@
 package com.guatai.yangaicodemother.utils;
-
 import cn.hutool.crypto.digest.DigestUtil;
 import cn.hutool.json.JSONUtil;
 
