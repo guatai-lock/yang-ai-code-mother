@@ -167,7 +167,7 @@ public class AiCodeGeneratorFacade {
                     })
                     .onCompleteResponse((ChatResponse response) -> {
                         //执行vue项目构建（同步执行，确保预览时项目已就绪）
-                       String projectPath =  AppConstant.CODE_OUTPUT_ROOT_DIR + File.separator + "vue_project" + appid;
+                       String projectPath =  AppConstant.CODE_OUTPUT_ROOT_DIR + File.separator + "vue_project_" + appid;
                        vueProjectBuilder.buildProject(projectPath);
                        // 响应完成，结束流
                         sink.complete();

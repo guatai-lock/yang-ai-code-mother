@@ -46,6 +46,13 @@ public class AiModelMonitorListener implements ChatModelListener {
         Map<Object, Object> attributes = responseContext.attributes();
         // 从监控上下文中获取信息
         MonitorContext context = (MonitorContext) attributes.get(MONITOR_CONTEXT_KEY);
+        
+        // 空值检查：防止跨线程调用时 context 为 null
+        if (context == null) {
+            log.warn("MonitorContext is null in onResponse, skipping metrics collection");
+            return;
+        }
+        
         String userId = context.getUserId();
         String appId = context.getAppId();
         // 获取模型名称
@@ -62,6 +69,13 @@ public class AiModelMonitorListener implements ChatModelListener {
     public void onError(ChatModelErrorContext errorContext) {
         // 从监控上下文中获取信息
         MonitorContext context = MonitorContextHolder.getContext();
+        
+        // 空值检查：防止 context 为 null
+        if (context == null) {
+            log.warn("MonitorContext is null in onError, skipping metrics collection");
+            return;
+        }
+        
         String userId = context.getUserId();
         String appId = context.getAppId();
         // 获取模型名称和错误类型

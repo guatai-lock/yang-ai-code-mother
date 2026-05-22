@@ -1,5 +1,7 @@
 package com.guatai.yangaicodemother.common;
 
+import java.io.File;
+
 /**
  * ClassName: cons
  * Package: com.guatai.yangaicodemother.common
@@ -23,17 +25,17 @@ public interface AppConstant {
     /**
      * 应用生成目录
      */
-    String CODE_OUTPUT_ROOT_DIR = System.getProperty("user.dir") + "/tmp/code_output";
+    String CODE_OUTPUT_ROOT_DIR = System.getProperty("user.dir") + File.separator + "tmp" + File.separator + "code_output";
 
     /**
      * 应用部署目录
      */
-    String CODE_DEPLOY_ROOT_DIR = System.getProperty("user.dir") + "/tmp/code_deploy";
+    String CODE_DEPLOY_ROOT_DIR = System.getProperty("user.dir") + File.separator + "tmp" + File.separator + "code_deploy";
 
     /**
      * 应用部署域名
+     * 注意：必须包含端口号，因为 Spring Boot 应用运行在 8123 端口
      */
-    String CODE_DEPLOY_HOST = "http://localhost";
+    String CODE_DEPLOY_HOST = "http://localhost:";
 
 }
-
