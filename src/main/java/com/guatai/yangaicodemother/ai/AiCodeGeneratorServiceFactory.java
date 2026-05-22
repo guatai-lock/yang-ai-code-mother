@@ -2,7 +2,8 @@ package com.guatai.yangaicodemother.ai;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
-import com.guatai.yangaicodemother.ai.guardrail.PromptSafetyInputGuardrail;
+import com.guatai.yangaicodemother.ai.guardrail.CompositeInputGuardrail;
+import com.guatai.yangaicodemother.ai.guardrail.CompositeOutputGuardrail;
 import com.guatai.yangaicodemother.ai.tools.*;
 import com.guatai.yangaicodemother.exception.BusinessException;
 import com.guatai.yangaicodemother.exception.ErrorCode;
@@ -78,7 +79,8 @@ public class AiCodeGeneratorServiceFactory {
                         .hallucinatedToolNameStrategy(toolExecutionRequest -> ToolExecutionResultMessage.from(
                                 toolExecutionRequest, "Error: there is no tool called " + toolExecutionRequest.name()
                         ))
-                        .inputGuardrails(new PromptSafetyInputGuardrail())
+                        .inputGuardrails(new CompositeInputGuardrail())
+                        .outputGuardrails(new CompositeOutputGuardrail())
                         .maxSequentialToolsInvocations(20)
                         .build();
             }
@@ -89,7 +91,8 @@ public class AiCodeGeneratorServiceFactory {
                         .chatModel(chatModel)
                         .streamingChatModel(openAiStreamingChatModel)
                         .chatMemory(chatMemory)
-                        .inputGuardrails(new PromptSafetyInputGuardrail())
+                        .inputGuardrails(new CompositeInputGuardrail())
+                        .outputGuardrails(new CompositeOutputGuardrail())
                         .build();
             }
             default -> throw new BusinessException(ErrorCode.SYSTEM_ERROR,
