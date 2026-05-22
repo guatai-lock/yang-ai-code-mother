@@ -24,6 +24,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -35,6 +37,10 @@ import java.util.List;
 public class ChatHistoryServiceImpl extends ServiceImpl<ChatHistoryMapper, ChatHistory>  implements ChatHistoryService{
     @Resource
     private AppService appService;
+
+    private static final int MESSAGE_LENGTH_WARNING_THRESHOLD = 50000;
+    private static final int MESSAGE_LENGTH_ERROR_THRESHOLD = 60000;
+
     @Override
     public boolean addChatMessage(Long appId, String message, String messageType, Long userId) {
         ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "应用ID不能为空");
@@ -44,6 +50,18 @@ public class ChatHistoryServiceImpl extends ServiceImpl<ChatHistoryMapper, ChatH
         // 验证消息类型是否有效
         ChatHistoryMessageTypeEnum messageTypeEnum = ChatHistoryMessageTypeEnum.getEnumByValue(messageType);
         ThrowUtils.throwIf(messageTypeEnum == null, ErrorCode.PARAMS_ERROR, "不支持的消息类型: " + messageType);
+        // 消息长度控制（MySQL TEXT 限制约64KB，留一些余量）,截断限流逻辑，防止用户消息过长导致数据库保存失败
+        int messageLength = message.length();
+        if (messageLength > MESSAGE_LENGTH_ERROR_THRESHOLD) {
+            log.error("消息长度超过安全阈值({}): {}字符, appId: {}",
+                    MESSAGE_LENGTH_ERROR_THRESHOLD, messageLength, appId);
+            // 可以选择截断或抛出异常
+            log.warn("消息过长({}字符)，进行截断保存，appId: {}", message.length(), appId);
+            message = message.substring(0, MESSAGE_LENGTH_ERROR_THRESHOLD) + "\n...[内容过长已截断]";
+        } else if (messageLength > MESSAGE_LENGTH_WARNING_THRESHOLD) {
+            log.warn("消息长度接近限制({}): {}字符, appId: {}",
+                    MESSAGE_LENGTH_WARNING_THRESHOLD, messageLength, appId);
+        }
         ChatHistory chatHistory = ChatHistory.builder()
                 .appId(appId)
                 .message(message)
@@ -122,6 +140,7 @@ public class ChatHistoryServiceImpl extends ServiceImpl<ChatHistoryMapper, ChatH
     @Override
     public int loadChatHistoryToMemory(Long appId, MessageWindowChatMemory chatMemory, int maxCount) {
         try {
+            // 1. 查询最近 maxCount 条历史（最新的在前
             // 直接构造查询条件，起始点为 1 而不是 0，用于排除最新的用户消息
             QueryWrapper queryWrapper = QueryWrapper.create()
                     .eq(ChatHistory::getAppId, appId)
@@ -131,13 +150,30 @@ public class ChatHistoryServiceImpl extends ServiceImpl<ChatHistoryMapper, ChatH
             if (CollUtil.isEmpty(historyList)) {
                 return 0;
             }
-            // 反转列表，确保按时间正序（老的在前，新的在后）
-            historyList = historyList.reversed();
+            final int MAX_TOKENS = 8000;
+            int totalTokens = 0;
+            // 用于保存保留的消息
+            List<ChatHistory> keepMessages = new ArrayList<>();
+            // 2. 倒着遍历 → 保留最新消息，丢弃最旧消息（核心！）
+            for (int i = 0; i < historyList.size(); i++) {
+                ChatHistory msg = historyList.get(i);
+                int msgTokens = estimateTokenCount(msg.getMessage());
+
+                // 超过上限就不再保留更早的消息
+                if (totalTokens + msgTokens > MAX_TOKENS) {
+                    log.info("appId: {} 消息token超限，丢弃较早的历史消息，只保留最新", appId);
+                    break;
+                }
+                keepMessages.add(msg);
+                totalTokens += msgTokens;
+            }
+            // 3. 反转 → 变成【最早 → 最新】顺序，才能加入 chatMemory
+            Collections.reverse(keepMessages);
             // 按时间顺序添加到记忆中
             int loadedCount = 0;
-            // 先清理历史缓存，防止重复加载
+            // 4. 清空并加载到内存
             chatMemory.clear();
-            for (ChatHistory history : historyList) {
+            for (ChatHistory history : keepMessages) {
                 if (ChatHistoryMessageTypeEnum.USER.getValue().equals(history.getMessageType())) {
                     chatMemory.add(UserMessage.from(history.getMessage()));
                     loadedCount++;
@@ -146,13 +182,26 @@ public class ChatHistoryServiceImpl extends ServiceImpl<ChatHistoryMapper, ChatH
                     loadedCount++;
                 }
             }
-            log.info("成功为 appId: {} 加载了 {} 条历史对话", appId, loadedCount);
+            log.info("appId: {} 加载完成，保留最新 {} 条消息，总token：{}", appId, loadedCount, totalTokens);
             return loadedCount;
         } catch (Exception e) {
-            log.error("加载历史对话失败，appId: {}, error: {}", appId, e.getMessage(), e);
-            // 加载失败不影响系统运行，只是没有历史上下文
+            log.error("加载历史对话失败，appId:{}", appId, e);
             return 0;
         }
     }
-
+    // 简单的token估算方法
+    private int estimateTokenCount(String text) {
+        // 粗略估算：英文约4字符/token，中文约1.5字符/token
+        if (text == null) return 0;
+        int chineseChars = 0;
+        int otherChars = 0;
+        for (char c : text.toCharArray()) {
+            if (c >= 0x4e00 && c <= 0x9fff) {
+                chineseChars++;
+            } else {
+                otherChars++;
+            }
+        }
+        return chineseChars + (otherChars / 4);
+    }
 }
