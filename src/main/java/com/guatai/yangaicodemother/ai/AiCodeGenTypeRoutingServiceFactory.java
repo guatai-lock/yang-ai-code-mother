@@ -1,5 +1,7 @@
 package com.guatai.yangaicodemother.ai;
 
+import com.guatai.yangaicodemother.ai.guardrail.CompositeInputGuardrail;
+import com.guatai.yangaicodemother.ai.guardrail.CompositeOutputGuardrail;
 import com.guatai.yangaicodemother.utils.SpringContextUtil;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.service.AiServices;
@@ -24,6 +26,8 @@ public class AiCodeGenTypeRoutingServiceFactory {
         ChatModel chatModel = SpringContextUtil.getBean("routingChatModelPrototype", ChatModel.class);
         return AiServices.builder(AiCodeGenTypeRoutingService.class)
                 .chatModel(chatModel)
+                .inputGuardrails(new CompositeInputGuardrail())
+                .outputGuardrails(new CompositeOutputGuardrail())
                 .build();
     }
 
