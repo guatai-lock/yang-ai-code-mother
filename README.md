@@ -5,6 +5,7 @@
 ## 一、项目介绍
 
 本项目基于 Spring Boot 3 + LangChain4j + MyBatisFlex +  Redission + Selenium + 阿里云ARMS + Prometheus + Grafana开发对标大厂的 **企业级 AI 代码生成平台**！
+![](C:\Users\30019713\AppData\Roaming\marktext\images\2026-05-22-21-18-18-QQ_1779455884934.png)
 
 <img width="3555" height="2000" alt="image_967088347285491" src="https://github.com/user-attachments/assets/f84bfec8-1310-46f5-b42c-1122ef41cb39" />
 
