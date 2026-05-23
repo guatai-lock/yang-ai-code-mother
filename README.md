@@ -5,11 +5,9 @@
 ## 一、项目介绍
 
 本项目基于 Spring Boot 3 + LangChain4j + MyBatisFlex +  Redission + Selenium + 阿里云ARMS + Prometheus + Grafana开发对标大厂的 **企业级 AI 代码生成平台**！
-![](<img width="1876" height="849" alt="Image" src="https://github.com/user-attachments/assets/c80ef8a5-9889-4d84-b2c5-969b0f636dcb" />)
+![](https://github.com/user-attachments/assets/c80ef8a5-9889-4d84-b2c5-969b0f636dcb/)
 
 <img width="3555" height="2000" alt="image_967088347285491" src="https://github.com/user-attachments/assets/f84bfec8-1310-46f5-b42c-1122ef41cb39" />
-
-![](file://C:\Users\30019713\AppData\Roaming\marktext\images\2026-05-22-21-18-18-QQ_1779455884934.png?msec=1779455898879)
 
 ### 4 大核心能力
 
@@ -21,7 +19,7 @@
 - **多文件工程生成**：生成包含 HTML、CSS、JS 的多文件项目
 - **Vue 项目生成**：生成完整的 Vue 3 前端项目
 
-![](file://C:\Users\30019713\AppData\Roaming\marktext\images\2026-05-22-21-19-11-QQ_1779455941897.png?msec=1779455951474)
+![](https://github.com/user-attachments/assets/89f32af6-65ea-4548-981c-9a74440c4020/)
 
 #### 2）可视化编辑
 
@@ -31,7 +29,7 @@
 - **对话式修改**：通过自然语言指令调整页面
 - **智能理解**：AI 理解用户意图并精准修改
 
-![](file://C:\Users\30019713\AppData\Roaming\marktext\images\2026-05-22-21-19-55-QQ_1779455991037.png?msec=1779455995859)
+![](https://github.com/user-attachments/assets/a3023685-12c1-447a-ae68-328d64555f7d/)
 
 #### 3）一键部署分享
 
@@ -41,11 +39,11 @@
 - **自动截图**：AI 生成应用后自动截取封面图
 - **源码下载**：支持完整项目打包下载
 
-![](file://C:\Users\30019713\AppData\Roaming\marktext\images\2026-05-22-21-21-10-QQ_1779456064140.png?msec=1779456070235)
+![](https://github.com/user-attachments/assets/87b4d333-3557-4b4f-95c3-81c90c37732f/)
 
 查看精选案例：
 
-![](file://C:\Users\30019713\AppData\Roaming\marktext\images\2026-05-22-21-23-23-QQ_1779456200516.png?msec=1779456203417)
+![](https://github.com/user-attachments/assets/13679a96-83b0-4119-8ce0-b5d27c5f63f5/)
 
 #### 4）企业级管理
 
@@ -56,7 +54,7 @@
 - **对话历史**：按应用查看完整对话记录
 - **系统监控**：AI 模型调用监控、性能指标监控
 
-![](file://C:\Users\30019713\AppData\Roaming\marktext\images\2026-05-22-21-25-41-QQ_1779456336178.png?msec=1779456341041)
+![](https://github.com/user-attachments/assets/75fa6e87-db8b-44d9-be72-7db6aa363e88/)
 
 ## 二、项目优势
 
@@ -129,31 +127,31 @@ Spring Boot 3 + LangChain4j + MyBatisFlex +  Redission + Selenium + 阿里云AR
 
 输入简单的页面需求，AI 自动生成完整的 HTML 代码。
 
-![](file://C:\Users\30019713\AppData\Roaming\marktext\images\2026-05-22-21-39-28-QQ_1779457164877.png?msec=1779457168137)
+![](https://github.com/user-attachments/assets/c80ef8a5-9889-4d84-b2c5-969b0f636dcb/)
 
 ### 2. 多文件工程生成
 
 生成包含 HTML、CSS、JS 分离的多文件项目。
 
-![](file://C:\Users\30019713\AppData\Roaming\marktext\images\2026-05-22-21-43-46-QQ_1779457422478.png?msec=1779457426519)
+![](https://github.com/user-attachments/assets/e7e33964-4f94-4f74-9f54-27306ac9a24b/)
 
 ### 3. Vue 项目生成
 
 生成完整的 Vue 3 项目，包含组件化开发。
 
-![](file://C:\Users\30019713\AppData\Roaming\marktext\images\2026-05-22-21-44-31-QQ_1779457468020.png?msec=1779457471983)
+![](https://github.com/user-attachments/assets/7cd40ec2-57d9-4c23-baef-1ee286ff0763)
 
 ### 4. 对话式修改
 
 通过对话方式让 AI 修改已生成的页面。
 
-![](file://C:\Users\30019713\AppData\Roaming\marktext\images\2026-05-22-21-47-20-QQ_1779457636100.png?msec=1779457640097)
+![](https://github.com/user-attachments/assets/3cb9907a-5eb8-4dc7-b87c-845dc8a691ce)
 
 ### 5. 一键部署
 
 将生成的应用部署到云端并获取访问链接。
 
-![](file://C:\Users\30019713\AppData\Roaming\marktext\images\2026-05-22-21-47-36-QQ_1779457653523.png?msec=1779457656423)
+![](https://github.com/user-attachments/assets/0fc4391a-4e5a-4959-b080-a20006579f88)
 
 ## 五、技术深度解析
 
