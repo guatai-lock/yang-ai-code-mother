@@ -77,7 +77,6 @@ public class AiCodeGeneratorServiceFactory {
                                 toolExecutionRequest, "Error: there is no tool called " + toolExecutionRequest.name()
                         ))
                         .inputGuardrails(new CompositeInputGuardrail())
-                        .outputGuardrails(new CompositeOutputGuardrail())
                         .maxSequentialToolsInvocations(20)
                         .build();
             }
@@ -89,7 +88,6 @@ public class AiCodeGeneratorServiceFactory {
                         .streamingChatModel(openAiStreamingChatModel)
                         .chatMemory(chatMemory)
                         .inputGuardrails(new CompositeInputGuardrail())
-                        .outputGuardrails(new CompositeOutputGuardrail())
                         .build();
             }
             default -> throw new BusinessException(ErrorCode.SYSTEM_ERROR,
