@@ -5,6 +5,8 @@ import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.util.RandomUtil;
 import cn.hutool.core.util.StrUtil;
+import com.guatai.yangaicodemother.ai.AiAppNameGeneratorService;
+import com.guatai.yangaicodemother.ai.AiAppNameGeneratorServiceFactory;
 import com.guatai.yangaicodemother.ai.AiCodeGenTypeRoutingService;
 import com.guatai.yangaicodemother.ai.AiCodeGenTypeRoutingServiceFactory;
 import com.guatai.yangaicodemother.common.AppConstant;
@@ -74,6 +76,9 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
 
     @Resource
     private AiCodeGenTypeRoutingServiceFactory aiCodeGenTypeRoutingServiceFactory;
+
+    @Resource
+    private AiAppNameGeneratorServiceFactory aiAppNameGeneratorServiceFactory;
     @Override
     public Long createApp(AppAddRequest appAddRequest, User loginUser) {
         // 参数校验
@@ -83,8 +88,9 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
         App app = new App();
         BeanUtil.copyProperties(appAddRequest, app);
         app.setUserId(loginUser.getId());
-        // 应用名称暂时为 initPrompt 前 12 位
-        app.setAppName(initPrompt.substring(0, Math.min(initPrompt.length(), 12)));
+        // 使用 AI 智能生成应用名称
+        String appName = generateAppNameByAI(initPrompt);
+        app.setAppName(appName);
         // 使用 AI 智能选择代码生成类型(多例模式)
         AiCodeGenTypeRoutingService routingService = aiCodeGenTypeRoutingServiceFactory.createAiCodeGenTypeRoutingService();
         CodeGenTypeEnum selectedCodeGenType = routingService.routeCodeGenType(initPrompt);
@@ -303,5 +309,40 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
             boolean updated = this.updateById(updateApp);
             ThrowUtils.throwIf(!updated, ErrorCode.OPERATION_ERROR, "更新应用封面字段失败");
         });
+    }
+
+    /**
+     * 使用 AI 根据 initPrompt 生成应用名称
+     *
+     * @param initPrompt 初始化描述
+     * @return 生成的应用名称
+     */
+    private String generateAppNameByAI(String initPrompt) {
+        try {
+            // 使用独立的应用名称生成 AI 服务实例（与其他 AI 服务隔离）
+            AiAppNameGeneratorService aiService = aiAppNameGeneratorServiceFactory.createAiAppNameGeneratorService();
+            String generatedName = aiService.generateAppName(initPrompt);
+
+            // 校验生成的名称是否合法
+            if (StrUtil.isBlank(generatedName) || generatedName.length() > 50) {
+                log.warn("AI 生成的应用名称不合法，使用降级方案: {}", generatedName);
+                return getDefaultAppName(initPrompt);
+            }
+
+            return generatedName.trim();
+        } catch (Exception e) {
+            log.error("AI 生成应用名称失败，使用降级方案: {}", e.getMessage());
+            return getDefaultAppName(initPrompt);
+        }
+    }
+
+    /**
+     * 降级方案：使用 initPrompt 前 12 位（保持原有逻辑）
+     *
+     * @param initPrompt 初始化描述
+     * @return 默认应用名称
+     */
+    private String getDefaultAppName(String initPrompt) {
+        return initPrompt.substring(0, Math.min(initPrompt.length(), 12));
     }
 }
