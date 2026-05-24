@@ -38,8 +38,13 @@
 - **一键部署**：自动生成部署标识和访问链接
 - **自动截图**：AI 生成应用后自动截取封面图
 - **源码下载**：支持完整项目打包下载
+- **部署状态管理**：支持部署之后取消部署与恢复部署
 
 ![](https://github.com/user-attachments/assets/87b4d333-3557-4b4f-95c3-81c90c37732f/)
+<img width="1895" height="910" alt="0a460d58e98f48fced4ae580ebb3cfb0" src="https://github.com/user-attachments/assets/3db7153b-cd7d-45b3-bce1-9b80ffba71d2" />
+<img width="1868" height="929" alt="40233c341107535729c07e7c5bb3c3a5" src="https://github.com/user-attachments/assets/5b47252e-9c18-402a-994c-a305371a9ebd" />
+<img width="1886" height="814" alt="184af0609b515eb7cfa1e0f8954eb007" src="https://github.com/user-attachments/assets/bc55d31f-1dc8-4403-ae81-7b1c06d606c4" />
+
 
 查看精选案例：
 
