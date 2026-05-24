@@ -21,7 +21,9 @@ import com.guatai.yangaicodemother.model.dto.app.AppQueryRequest;
 import com.guatai.yangaicodemother.model.entity.User;
 import com.guatai.yangaicodemother.model.enums.ChatHistoryMessageTypeEnum;
 import com.guatai.yangaicodemother.model.enums.CodeGenTypeEnum;
+import com.guatai.yangaicodemother.model.enums.DeployStatusEnum;
 import com.guatai.yangaicodemother.model.vo.AppVO;
+import com.guatai.yangaicodemother.model.vo.DeployStatusVO;
 import com.guatai.yangaicodemother.model.vo.UserVO;
 import com.guatai.yangaicodemother.monitor.MonitorContext;
 import com.guatai.yangaicodemother.monitor.MonitorContextHolder;
@@ -35,17 +37,23 @@ import com.guatai.yangaicodemother.mapper.AppMapper;
 import com.guatai.yangaicodemother.service.AppService;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
 
 import java.io.File;
+import java.io.FileFilter;
 import java.io.Serializable;
+import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
@@ -79,6 +87,9 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
 
     @Resource
     private AiAppNameGeneratorServiceFactory aiAppNameGeneratorServiceFactory;
+
+    @Resource
+    private RedissonClient redissonClient;
     @Override
     public Long createApp(AppAddRequest appAddRequest, User loginUser) {
         // 参数校验
@@ -255,6 +266,13 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
         updateApp.setId(appId);
         updateApp.setDeployKey(deployKey);
         updateApp.setDeployedTime(LocalDateTime.now());
+        updateApp.setDeployStatus(DeployStatusEnum.ONLINE.getValue()); // 设置初始状态为在线
+        
+        // Vue 项目记录构建时间
+        if (codeGenTypeEnum == CodeGenTypeEnum.VUE_PROJECT) {
+            updateApp.setLastBuildTime(LocalDateTime.now());
+        }
+        
         boolean updateResult = this.updateById(updateApp);
         ThrowUtils.throwIf(!updateResult, ErrorCode.OPERATION_ERROR, "更新应用部署信息失败");
         // 10. 返回可访问的 URL
@@ -344,5 +362,363 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
      */
     private String getDefaultAppName(String initPrompt) {
         return initPrompt.substring(0, Math.min(initPrompt.length(), 12));
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public String deployOffline(Long appId, User loginUser) {
+        // 1. 参数校验
+        ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "应用ID不能为空");
+        ThrowUtils.throwIf(loginUser == null, ErrorCode.NOT_LOGIN_ERROR, "用户未登录");
+
+        // 2. 分布式锁（防止并发冲突）
+        String lockKey = "app:deploy:lock:" + appId;
+        RLock lock = redissonClient.getLock(lockKey);
+
+        try {
+            // 3. 获取锁（等待3秒，持有10秒）
+            if (!lock.tryLock(3, -1, TimeUnit.SECONDS)) {
+                throw new BusinessException(ErrorCode.OPERATION_ERROR, "操作频繁，请稍后重试");
+            }
+
+            // 4. 查询应用 + 权限校验
+            App app = validateAppPermission(appId, loginUser);
+
+            // 5. 状态校验
+            validateStatusTransition(app.getDeployStatus(), DeployStatusEnum.OFFLINE);
+
+            // 6. 根据项目类型执行不同的归档策略
+            String archivePath;
+            CodeGenTypeEnum codeGenType = CodeGenTypeEnum.getEnumByValue(app.getCodeGenType());
+
+            if (codeGenType == CodeGenTypeEnum.VUE_PROJECT) {
+                // Vue 项目：归档完整项目（源码 + dist 缓存）
+                archivePath = archiveVueProject(app.getDeployKey(), appId);
+            } else {
+                // HTML/Multi-file：直接归档部署目录
+                archivePath = archiveDeployDirectory(app.getDeployKey(), appId);
+            }
+
+            // 7. 更新数据库
+            App updateApp = new App();
+            updateApp.setId(appId);
+            updateApp.setDeployStatus(DeployStatusEnum.OFFLINE.getValue());
+            updateApp.setArchivePath(archivePath);
+            updateApp.setDeployKey(null); // 清理对外访问链接
+            updateApp.setEditTime(LocalDateTime.now());
+
+            boolean result = this.updateById(updateApp);
+            ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR, "应用下线失败");
+
+            log.info("应用下线成功，appId: {}, archivePath: {}", appId, archivePath);
+            return "应用已下线，归档路径：" + archivePath;
+
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "操作被中断");
+        } finally {
+            if (lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
+        }
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public String deployOnline(Long appId, User loginUser) {
+        // 1. 参数校验
+        ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "应用ID不能为空");
+        ThrowUtils.throwIf(loginUser == null, ErrorCode.NOT_LOGIN_ERROR, "用户未登录");
+
+        // 2. 分布式锁
+        String lockKey = "app:deploy:lock:" + appId;
+        RLock lock = redissonClient.getLock(lockKey);
+
+        try {
+            // 3. 获取锁
+            if (!lock.tryLock(3,-1, TimeUnit.SECONDS)) { // Vue 构建可能需要更长时间
+                throw new BusinessException(ErrorCode.OPERATION_ERROR, "操作频繁，请稍后重试");
+            }
+
+            // 4. 查询应用 + 权限校验
+            App app = validateAppPermission(appId, loginUser);
+
+            // 5. 状态校验
+            validateStatusTransition(app.getDeployStatus(), DeployStatusEnum.ONLINE);
+
+            // 6. 生成新的 deployKey
+            String deployKey = RandomUtil.randomString(6);
+
+            // 7. 根据项目类型执行不同的恢复策略
+            CodeGenTypeEnum codeGenType = CodeGenTypeEnum.getEnumByValue(app.getCodeGenType());
+
+            if (codeGenType == CodeGenTypeEnum.VUE_PROJECT) {
+                // Vue 项目：恢复源码 → 重新构建 → 部署 dist
+                restoreAndBuildVueProject(app.getArchivePath(), deployKey, appId);
+            } else {
+                // HTML/Multi-file：直接恢复部署目录
+                restoreDeployDirectory(app.getArchivePath(), deployKey);
+            }
+
+            // 8. 更新数据库
+            App updateApp = new App();
+            updateApp.setId(appId);
+            updateApp.setDeployStatus(DeployStatusEnum.ONLINE.getValue());
+            updateApp.setDeployKey(deployKey);
+            updateApp.setDeployedTime(LocalDateTime.now());
+            updateApp.setArchivePath(null); // 清空归档路径
+            updateApp.setEditTime(LocalDateTime.now());
+
+            // Vue 项目记录构建时间
+            if (codeGenType == CodeGenTypeEnum.VUE_PROJECT) {
+                updateApp.setLastBuildTime(LocalDateTime.now());
+            }
+
+            boolean result = this.updateById(updateApp);
+            ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR, "应用上线失败");
+
+            // 9. 返回可访问的 URL
+            String appDeployUrl = String.format("%s/%s/", AppConstant.CODE_DEPLOY_HOST, deployKey);
+
+            // 10. 异步生成截图
+            generateAppScreenshotAsync(appId, appDeployUrl);
+
+            log.info("应用上线成功，appId: {}, deployKey: {}, url: {}", appId, deployKey, appDeployUrl);
+            return appDeployUrl;
+
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "操作被中断");
+        } finally {
+            if (lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
+        }
+    }
+
+    @Override
+    public DeployStatusVO getDeployStatus(Long appId) {
+        ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "应用ID不能为空");
+
+        App app = this.getById(appId);
+        ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR, "应用不存在");
+
+        DeployStatusVO vo = new DeployStatusVO();
+        vo.setAppId(app.getId());
+        vo.setAppName(app.getAppName());
+        vo.setDeployStatus(app.getDeployStatus());
+        vo.setDeployKey(app.getDeployKey());
+
+        // 设置状态文本
+        DeployStatusEnum statusEnum = DeployStatusEnum.getEnumByValue(app.getDeployStatus());
+        if (statusEnum != null) {
+            vo.setDeployStatusText(statusEnum.getText());
+        }
+
+        // 如果在线，构建访问 URL
+        if (DeployStatusEnum.ONLINE.getValue().equals(app.getDeployStatus()) 
+                && StrUtil.isNotBlank(app.getDeployKey())) {
+            vo.setDeployedUrl(String.format("%s/%s/", AppConstant.CODE_DEPLOY_HOST, app.getDeployKey()));
+        }
+
+        vo.setDeployedTime(app.getDeployedTime());
+        vo.setArchivePath(app.getArchivePath());
+        vo.setLastBuildTime(app.getLastBuildTime());
+        vo.setCodeGenType(app.getCodeGenType());
+
+        return vo;
+    }
+
+    @Override
+    public App getByDeployKey(String deployKey) {
+        if (StrUtil.isBlank(deployKey)) {
+            return null;
+        }
+
+        QueryWrapper queryWrapper = QueryWrapper.create()
+                .eq("deployKey", deployKey)
+                .eq("deployStatus", DeployStatusEnum.ONLINE.getValue());
+
+        return this.getOne(queryWrapper);
+    }
+
+    // ======================== 私有辅助方法 ========================
+
+    /**
+     * 校验应用权限（仅创建者可操作）
+     */
+    private App validateAppPermission(Long appId, User loginUser) {
+        App app = this.getById(appId);
+        ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR, "应用不存在");
+
+        if (!app.getUserId().equals(loginUser.getId())) {
+            throw new BusinessException(ErrorCode.NO_AUTH_ERROR, "无权限操作该应用");
+        }
+
+        return app;
+    }
+
+    /**
+     * 校验状态流转合法性
+     */
+    private void validateStatusTransition(String currentStatus, DeployStatusEnum targetStatus) {
+        DeployStatusEnum currentEnum = DeployStatusEnum.getEnumByValue(currentStatus);
+
+        // OFFLINE → ONLINE/DEPLOYING
+        if (currentEnum == DeployStatusEnum.OFFLINE) {
+            if (targetStatus != DeployStatusEnum.ONLINE) {
+                throw new BusinessException(ErrorCode.DEPLOY_STATUS_ERROR, 
+                        "离线状态只能转为在线，不能转为" + targetStatus.getText());
+            }
+            return;
+        }
+
+        // ONLINE → OFFLINE
+        if (currentEnum == DeployStatusEnum.ONLINE) {
+            if (targetStatus != DeployStatusEnum.OFFLINE) {
+                throw new BusinessException(ErrorCode.DEPLOY_STATUS_ERROR, 
+                        "在线状态只能转为离线，不能转为" + targetStatus.getText());
+            }
+            return;
+        }
+
+        // DEPLOYING 状态不允许手动操作
+        if (currentEnum == DeployStatusEnum.DEPLOYING) {
+            throw new BusinessException(ErrorCode.DEPLOY_STATUS_ERROR, 
+                    "应用正在部署中，请稍后操作");
+        }
+
+        throw new BusinessException(ErrorCode.DEPLOY_STATUS_ERROR, 
+                "未知的部署状态：" + currentStatus);
+    }
+
+    /**
+     * 归档 Vue 项目（混合策略：源码 + dist 缓存）
+     */
+    private String archiveVueProject(String deployKey, Long appId) {
+        if (StrUtil.isBlank(deployKey)) {
+            return null;
+        }
+
+        String sourceDirName = "vue_project_" + appId;
+        String sourcePath = AppConstant.CODE_OUTPUT_ROOT_DIR + File.separator + sourceDirName;
+        String archivePath = AppConstant.CODE_ARCHIVE_ROOT_DIR + File.separator 
+                             + appId + "_" + deployKey + "_vue";
+
+        try {
+            File sourceDir = new File(sourcePath);
+            ThrowUtils.throwIf(!sourceDir.exists(), ErrorCode.SYSTEM_ERROR, "Vue 项目源码不存在");
+
+            // 创建归档目录
+            File archiveDir = new File(archivePath);
+            FileUtil.mkdir(archiveDir);
+
+            // 1. 归档源码（排除 node_modules 和 dist）
+            File sourceArchiveDir = new File(archivePath + "/source");
+            FileUtil.copy(sourceDir, sourceArchiveDir, true);
+            // 复制后删除不需要的目录
+            FileUtil.del(new File(sourceArchiveDir, "node_modules"));
+            FileUtil.del(new File(sourceArchiveDir, "dist"));
+
+            // 2. 归档 dist（如果存在，用于快速恢复）
+            File distDir = new File(sourcePath, "dist");
+            if (distDir.exists()) {
+                File distArchiveDir = new File(archivePath + "/dist");
+                FileUtil.copy(distDir, distArchiveDir, true);
+                log.info("Vue 项目 dist 目录已缓存");
+            }
+
+            log.info("Vue 项目已归档（混合策略）：{}", archivePath);
+            return archivePath;
+
+        } catch (Exception e) {
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "Vue 项目归档失败：" + e.getMessage());
+        }
+    }
+
+    /**
+     * 归档 HTML/Multi-file 项目
+     */
+    private String archiveDeployDirectory(String deployKey, Long appId) {
+        if (StrUtil.isBlank(deployKey)) {
+            return null;
+        }
+
+        String sourcePath = AppConstant.CODE_DEPLOY_ROOT_DIR + File.separator + deployKey;
+        String archivePath = AppConstant.CODE_ARCHIVE_ROOT_DIR + File.separator 
+                             + appId + "_" + deployKey;
+
+        try {
+            File sourceDir = new File(sourcePath);
+            ThrowUtils.throwIf(!sourceDir.exists(), ErrorCode.SYSTEM_ERROR, "部署目录不存在");
+
+            // 移动目录到归档
+            FileUtil.move(sourceDir, new File(archivePath), true);
+            log.info("应用部署目录已归档：{}", archivePath);
+            return archivePath;
+
+        } catch (Exception e) {
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "归档失败：" + e.getMessage());
+        }
+    }
+
+    /**
+     * 恢复并重新构建 Vue 项目（缓存优先策略）
+     */
+    private void restoreAndBuildVueProject(String archivePath, String deployKey, Long appId) {
+        String deployDirPath = AppConstant.CODE_DEPLOY_ROOT_DIR + File.separator + deployKey;
+
+        try {
+            // 策略 1：优先使用缓存的 dist（7天内有效）
+            File cachedDist = new File(archivePath + "/dist");
+            if (cachedDist.exists()) {
+                log.info("使用缓存的 dist 目录快速恢复 Vue 项目");
+                FileUtil.copyContent(cachedDist, new File(deployDirPath), true);
+                return;
+            }
+
+            // 策略 2：从归档恢复源码 → 调用 buildProject() 重新构建
+            log.info("缓存 dist 不存在或已过期，从归档恢复并重新构建 Vue 项目");
+            String sourcePath = archivePath + "/source";
+            String restorePath = AppConstant.CODE_OUTPUT_ROOT_DIR + File.separator 
+                                 + "vue_project_" + appId;
+
+            // 1. 恢复源码到输出目录
+            FileUtil.copy(new File(sourcePath), new File(restorePath), true);
+            log.info("Vue 项目源码已恢复：{} → {}", sourcePath, restorePath);
+
+            // 2. 【关键】复用 VueProjectBuilder.buildProject() 完成 npm install + build
+            boolean buildSuccess = vueProjectBuilder.buildProject(restorePath);
+            ThrowUtils.throwIf(!buildSuccess, ErrorCode.SYSTEM_ERROR, "Vue 项目重新构建失败");
+
+            // 3. 复制 dist 到部署目录
+            File distDir = new File(restorePath, "dist");
+            FileUtil.copyContent(distDir, new File(deployDirPath), true);
+            log.info("Vue 项目部署成功：{} → {}", distDir.getAbsolutePath(), deployDirPath);
+
+        } catch (Exception e) {
+            // 失败时清理部署目录
+            FileUtil.del(new File(deployDirPath));
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "Vue 项目恢复失败：" + e.getMessage());
+        }
+    }
+
+    /**
+     * 恢复 HTML/Multi-file 项目部署目录
+     */
+    private void restoreDeployDirectory(String archivePath, String deployKey) {
+        String targetPath = AppConstant.CODE_DEPLOY_ROOT_DIR + File.separator + deployKey;
+
+        try {
+            File archiveDir = new File(archivePath);
+            ThrowUtils.throwIf(!archiveDir.exists(), ErrorCode.SYSTEM_ERROR, "归档目录不存在");
+
+            // 移动目录回部署目录
+            FileUtil.move(archiveDir, new File(targetPath), true);
+            log.info("部署目录已恢复：{} → {}", archivePath, targetPath);
+
+        } catch (Exception e) {
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "恢复失败：" + e.getMessage());
+        }
     }
 }

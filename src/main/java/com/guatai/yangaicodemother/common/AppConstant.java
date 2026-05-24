@@ -30,6 +30,11 @@ public interface AppConstant {
     String CODE_DEPLOY_ROOT_DIR = System.getProperty("user.dir") + File.separator + "tmp" + File.separator + "code_deploy";
 
     /**
+     * 应用归档目录
+     */
+    String CODE_ARCHIVE_ROOT_DIR = System.getProperty("user.dir") + File.separator + "tmp" + File.separator + "code_archive";
+
+    /**
      * 应用部署域名
      * 注意：必须包含端口号，因为 Spring Boot 应用运行在 8123 端口
      */

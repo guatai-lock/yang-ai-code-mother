@@ -11,6 +11,7 @@ import com.guatai.yangaicodemother.model.dto.app.*;
 import com.guatai.yangaicodemother.model.entity.App;
 import com.guatai.yangaicodemother.model.entity.User;
 import com.guatai.yangaicodemother.model.vo.AppVO;
+import com.guatai.yangaicodemother.model.vo.DeployStatusVO;
 import com.guatai.yangaicodemother.ratelimit.annotation.RateLimit;
 import com.guatai.yangaicodemother.ratelimit.enums.RateLimitType;
 import com.guatai.yangaicodemother.service.AppService;
@@ -105,6 +106,51 @@ public class AppController {
         // 调用服务部署应用
         String deployUrl = appService.deployApp(appId, loginUser);
         return ResultUtils.success(deployUrl);
+    }
+
+    /**
+     * 应用下线（取消部署）
+     *
+     * @param appDeployRequest 部署请求
+     * @param request          请求
+     * @return 操作结果
+     */
+    @PostMapping("/deploy/offline")
+    public BaseResponse<String> offlineApp(@RequestBody AppDeployRequest appDeployRequest, HttpServletRequest request) {
+        ThrowUtils.throwIf(appDeployRequest == null || appDeployRequest.getAppId() == null, 
+                          ErrorCode.PARAMS_ERROR, "应用ID不能为空");
+        User loginUser = userService.getLoginUser(request);
+        String result = appService.deployOffline(appDeployRequest.getAppId(), loginUser);
+        return ResultUtils.success(result);
+    }
+
+    /**
+     * 应用上线（恢复部署）
+     *
+     * @param appDeployRequest 部署请求
+     * @param request          请求
+     * @return 部署 URL
+     */
+    @PostMapping("/deploy/online")
+    public BaseResponse<String> onlineApp(@RequestBody AppDeployRequest appDeployRequest, HttpServletRequest request) {
+        ThrowUtils.throwIf(appDeployRequest == null || appDeployRequest.getAppId() == null, 
+                          ErrorCode.PARAMS_ERROR, "应用ID不能为空");
+        User loginUser = userService.getLoginUser(request);
+        String deployUrl = appService.deployOnline(appDeployRequest.getAppId(), loginUser);
+        return ResultUtils.success(deployUrl);
+    }
+
+    /**
+     * 查询应用部署状态
+     *
+     * @param appId 应用ID
+     * @return 部署状态信息
+     */
+    @GetMapping("/deploy/status/{appId}")
+    public BaseResponse<DeployStatusVO> getDeployStatus(@PathVariable Long appId) {
+        ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "应用ID无效");
+        DeployStatusVO statusVO = appService.getDeployStatus(appId);
+        return ResultUtils.success(statusVO);
     }
 
     /**
