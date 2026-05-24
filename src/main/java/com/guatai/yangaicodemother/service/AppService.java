@@ -4,6 +4,7 @@ import com.guatai.yangaicodemother.model.dto.app.AppAddRequest;
 import com.guatai.yangaicodemother.model.dto.app.AppQueryRequest;
 import com.guatai.yangaicodemother.model.entity.User;
 import com.guatai.yangaicodemother.model.vo.AppVO;
+import com.guatai.yangaicodemother.model.vo.DeployStatusVO;
 import com.mybatisflex.core.query.QueryWrapper;
 import com.mybatisflex.core.service.IService;
 import com.guatai.yangaicodemother.model.entity.App;
@@ -73,4 +74,38 @@ public interface AppService extends IService<App> {
      * @param appUrl 应用url
      */
     void generateAppScreenshotAsync(Long appId, String appUrl);
+
+    /**
+     * 应用下线（取消部署）
+     *
+     * @param appId 应用id
+     * @param loginUser 登录用户
+     * @return 操作结果信息
+     */
+    String deployOffline(Long appId, User loginUser);
+
+    /**
+     * 应用上线（恢复部署）
+     *
+     * @param appId 应用id
+     * @param loginUser 登录用户
+     * @return 部署访问 URL
+     */
+    String deployOnline(Long appId, User loginUser);
+
+    /**
+     * 查询应用部署状态
+     *
+     * @param appId 应用id
+     * @return 部署状态信息
+     */
+    DeployStatusVO getDeployStatus(Long appId);
+
+    /**
+     * 根据 deployKey 查询应用（用于静态资源访问拦截）
+     *
+     * @param deployKey 部署标识
+     * @return 应用信息
+     */
+    App getByDeployKey(String deployKey);
 }

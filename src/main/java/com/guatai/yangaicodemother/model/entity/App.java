@@ -71,6 +71,24 @@ public class App implements Serializable {
     private LocalDateTime deployedTime;
 
     /**
+     * 部署状态：ONLINE/OFFLINE/DEPLOYING
+     */
+    @Column("deployStatus")
+    private String deployStatus;
+
+    /**
+     * 归档目录路径（下线时保存）
+     */
+    @Column("archivePath")
+    private String archivePath;
+
+    /**
+     * 最后构建时间（Vue 项目专用，用于判断缓存是否过期）
+     */
+    @Column("lastBuildTime")
+    private LocalDateTime lastBuildTime;
+
+    /**
      * 优先级
      */
     private Integer priority;
