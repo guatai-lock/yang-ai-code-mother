@@ -4,7 +4,8 @@
 
 ## 一、项目介绍
 
-本项目基于 Spring Boot 3 + LangChain4j + MyBatisFlex +  Redission + Selenium + 阿里云ARMS + Prometheus + Grafana开发对标大厂的 **企业级 AI 代码生成平台**！
+  基于 **Spring Boot 3 + LangChain4j + WebFlux + Vue 3** 构建的企业级 AI 代码生成平台。用户通过自然语言描述需求，AI自动分析并选择最优策略（HTML 单文件 / 多文件工程 / Vue
+  项目），流式生成完整可运行的网站代码，支持实时预览、对话式修改、一键部署上线。
 ![](https://github.com/user-attachments/assets/c80ef8a5-9889-4d84-b2c5-969b0f636dcb/)
 
 <img width="3555" height="2000" alt="image_967088347285491" src="https://github.com/user-attachments/assets/f84bfec8-1310-46f5-b42c-1122ef41cb39" />
