@@ -38,9 +38,9 @@ public interface AppConstant {
     String CODE_ARCHIVE_ROOT_DIR = System.getProperty("user.dir") + File.separator + "tmp" + File.separator + "code_archive";
 
     /**
-     * 应用部署域名
+     * 应用部署域名（含端口）
      * 注意：必须包含端口号，因为 Spring Boot 应用运行在 8123 端口
      */
-    String CODE_DEPLOY_HOST = "http://localhost:";
+    String CODE_DEPLOY_HOST = "http://localhost:8123";
 
 }
