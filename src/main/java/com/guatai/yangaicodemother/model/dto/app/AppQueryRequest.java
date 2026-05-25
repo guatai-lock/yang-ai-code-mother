@@ -44,6 +44,11 @@ public class AppQueryRequest extends PageRequest implements Serializable {
     private String deployKey;
 
     /**
+     * 部署状态：ONLINE/OFFLINE/DEPLOYING
+     */
+    private String deployStatus;
+
+    /**
      * 优先级
      */
     private Integer priority;
