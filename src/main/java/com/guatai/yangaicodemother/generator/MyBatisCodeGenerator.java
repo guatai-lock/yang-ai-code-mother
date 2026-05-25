@@ -17,11 +17,11 @@ import java.util.Map;
 public class MyBatisCodeGenerator {
 
     // 需要生成的表名
-    private static final String[] TABLE_NAMES = {"chat_history"};
+    private static final String[] TABLE_NAMES = {"app_featured_application"};
 
     public static void main(String[] args) {
-        // 获取数据源信息
-        Dict dict = YamlUtil.loadByPath("application.yml");
+        // 获取数据源信息（从 application-local.yml 读取）
+        Dict dict = YamlUtil.loadByPath("application-local.yml");
         Map<String, Object> dataSourceConfig = dict.getByPath("spring.datasource");
         String url = String.valueOf(dataSourceConfig.get("url"));
         String username = String.valueOf(dataSourceConfig.get("username"));
