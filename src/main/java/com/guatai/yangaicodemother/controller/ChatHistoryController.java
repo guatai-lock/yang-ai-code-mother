@@ -13,11 +13,13 @@ import com.mybatisflex.core.paginate.Page;
 import com.mybatisflex.core.query.QueryWrapper;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import com.guatai.yangaicodemother.model.entity.ChatHistory;
 import com.guatai.yangaicodemother.service.ChatHistoryService;
 
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -52,6 +54,23 @@ public class ChatHistoryController {
         Page<ChatHistory> result = chatHistoryService.listAppChatHistoryByPage(appId, pageSize, lastCreateTime, loginUser);
         return ResultUtils.success(result);
     }
+    /**
+     * 导出应用对话历史为 Markdown 文件
+     */
+    @GetMapping("/app/{appId}/export")
+    public void exportChatHistory(@PathVariable Long appId,
+                                  HttpServletRequest request,
+                                  HttpServletResponse response) throws Exception {
+        User loginUser = userService.getLoginUser(request);
+        String markdown = chatHistoryService.exportChatHistoryAsMarkdown(appId, loginUser);
+        response.setStatus(HttpServletResponse.SC_OK);
+        response.setContentType("text/markdown; charset=UTF-8");
+        response.setHeader("Content-Disposition",
+                "attachment; filename=\"chat_history_" + appId + ".md\"");
+        response.getOutputStream().write(markdown.getBytes(StandardCharsets.UTF_8));
+        response.getOutputStream().flush();
+    }
+
     /**
      * 管理员分页查询所有对话历史
      *
