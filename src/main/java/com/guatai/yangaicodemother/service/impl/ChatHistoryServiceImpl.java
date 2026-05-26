@@ -24,6 +24,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -136,6 +137,58 @@ public class ChatHistoryServiceImpl extends ServiceImpl<ChatHistoryMapper, ChatH
             queryWrapper.orderBy("createTime", false);
         }
         return queryWrapper;
+    }
+    @Override
+    public List<ChatHistory> listAllChatHistoryForExport(Long appId, User loginUser) {
+        ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "应用ID不能为空");
+        ThrowUtils.throwIf(loginUser == null, ErrorCode.NOT_LOGIN_ERROR);
+        // 验证权限：只有应用创建者和管理员可以查看
+        App app = appService.getById(appId);
+        ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR, "应用不存在");
+        boolean isAdmin = UserConstant.ADMIN_ROLE.equals(loginUser.getUserRole());
+        boolean isCreator = app.getUserId().equals(loginUser.getId());
+        ThrowUtils.throwIf(!isAdmin && !isCreator, ErrorCode.NO_AUTH_ERROR, "无权查看该应用的对话历史");
+        // 查询所有对话历史，按创建时间升序
+        QueryWrapper queryWrapper = QueryWrapper.create()
+                .eq("appId", appId)
+                .orderBy("createTime", true);
+        return this.list(queryWrapper);
+    }
+    @Override
+    public String exportChatHistoryAsMarkdown(Long appId, User loginUser) {
+        List<ChatHistory> historyList = listAllChatHistoryForExport(appId, loginUser);
+        if (historyList == null || historyList.isEmpty()) {
+            return "# 对话记录\n\n暂无对话记录。";
+        }
+        App app = appService.getById(appId);
+        String appName = app != null ? app.getAppName() : "未知应用";
+        String userName = StrUtil.blankToDefault(loginUser.getUserName(), "未知用户");
+        String exportTime = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+        StringBuilder sb = new StringBuilder();
+        // 文件头
+        sb.append("# 对话记录：").append(appName).append("\n\n");
+        sb.append("- **应用 ID**：").append(appId).append("\n");
+        sb.append("- **创建者**：").append(userName).append("\n");
+        sb.append("- **导出时间**：").append(exportTime).append("\n");
+        sb.append("- **对话轮次**：").append((historyList.size() + 1) / 2).append("\n\n");
+        sb.append("---\n\n");
+        // 按 (user, ai) 配对输出
+        int round = 0;
+        for (int i = 0; i < historyList.size(); i++) {
+            ChatHistory msg = historyList.get(i);
+            if ("user".equals(msg.getMessageType())) {
+                round++;
+                sb.append("## 第 ").append(round).append(" 轮\n\n");
+                sb.append("### 用户\n\n").append(msg.getMessage()).append("\n\n");
+                // 检查下一条是否为 AI 响应
+                if (i + 1 < historyList.size() && "ai".equals(historyList.get(i + 1).getMessageType())) {
+                    sb.append("### AI\n\n").append(historyList.get(i + 1).getMessage()).append("\n\n");
+                    i++; // 跳过已处理的 AI 消息
+                }
+                sb.append("---\n\n");
+            }
+        }
+        return sb.toString();
     }
     @Override
     public int loadChatHistoryToMemory(Long appId, MessageWindowChatMemory chatMemory, int maxCount) {

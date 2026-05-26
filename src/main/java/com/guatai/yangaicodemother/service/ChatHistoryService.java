@@ -9,6 +9,7 @@ import com.guatai.yangaicodemother.model.entity.ChatHistory;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 对话历史 服务层。
@@ -50,6 +51,16 @@ public interface ChatHistoryService extends IService<ChatHistory> {
      * @return 查询包装类
      */
     QueryWrapper getQueryWrapper(ChatHistoryQueryRequest chatHistoryQueryRequest);
+
+    /**
+     * 获取应用的所有对话历史（按创建时间升序），用于导出
+     */
+    List<ChatHistory> listAllChatHistoryForExport(Long appId, User loginUser);
+
+    /**
+     * 导出应用对话历史为 Markdown 字符串
+     */
+    String exportChatHistoryAsMarkdown(Long appId, User loginUser);
 
     /**
      * 对话记忆初始化时，需要从数据库中加载对话历史到记忆中
