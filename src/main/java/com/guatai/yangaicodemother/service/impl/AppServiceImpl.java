@@ -734,19 +734,21 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
             FileUtil.mkdir(archiveDir);
 
             // 1. 归档源码（排除 node_modules 和 dist）
+            // 使用 copyContent 而非 copy，避免外层目录被重复嵌套
             File sourceArchiveDir = new File(archivePath + "/source");
-            FileUtil.copy(sourceDir, sourceArchiveDir, true);
+            FileUtil.mkdir(sourceArchiveDir);
+            FileUtil.copyContent(sourceDir, sourceArchiveDir, true);
             // 复制后删除不需要的目录
             FileUtil.del(new File(sourceArchiveDir, "node_modules"));
             FileUtil.del(new File(sourceArchiveDir, "dist"));
 
             // 2. 归档 dist（如果存在，用于快速恢复）
-            // 注意：先清理目标目录，防止 FileUtil.copy 在目录已存在时嵌套复制
             File distDir = new File(sourcePath, "dist");
             if (distDir.exists()) {
                 File distArchiveDir = new File(archivePath + "/dist");
-                FileUtil.del(distArchiveDir); // 防止多次归档导致 dist/dist/ 嵌套
-                FileUtil.copy(distDir, distArchiveDir, true);
+                FileUtil.del(distArchiveDir);
+                FileUtil.mkdir(distArchiveDir);
+                FileUtil.copyContent(distDir, distArchiveDir, true);
                 log.info("Vue 项目 dist 目录已缓存");
             }
 
@@ -810,8 +812,9 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
             String restorePath = AppConstant.CODE_OUTPUT_ROOT_DIR + File.separator 
                                  + "vue_project_" + appId;
 
-            // 1. 恢复源码到输出目录
-            FileUtil.copy(new File(sourcePath), new File(restorePath), true);
+            // 1. 恢复源码到输出目录（先清理再复制，避免旧文件残留和 copy 嵌套问题）
+            FileUtil.del(new File(restorePath));
+            FileUtil.copyContent(new File(sourcePath), new File(restorePath), true);
             log.info("Vue 项目源码已恢复：{} → {}", sourcePath, restorePath);
 
             // 2. 【关键】复用 VueProjectBuilder.buildProject() 完成 npm install + build
