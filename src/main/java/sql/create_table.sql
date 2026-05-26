@@ -37,6 +37,7 @@ create table app
     deployKey    varchar(64)                        null comment '部署标识',
     deployedTime datetime                           null comment '部署时间',
     priority     int      default 0                 not null comment '优先级',
+    conversationRound int  default 0                 not null comment '对话轮次',
     userId       bigint                             not null comment '创建用户id',
     editTime     datetime default CURRENT_TIMESTAMP not null comment '编辑时间',
     createTime   datetime default CURRENT_TIMESTAMP not null comment '创建时间',

@@ -201,6 +201,11 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
         chatHistoryService.addChatMessage(appId, message,
                 ChatHistoryMessageTypeEnum.USER.getValue(),
                 loginUser.getId());
+        // 5.5 递增应用对话轮次
+        App roundUpdate = new App();
+        roundUpdate.setId(appId);
+        roundUpdate.setConversationRound(app.getConversationRound() == null ? 1 : app.getConversationRound() + 1);
+        this.updateById(roundUpdate);
         //6设置监控上下文
         MonitorContextHolder.setContext(
                 MonitorContext.builder()

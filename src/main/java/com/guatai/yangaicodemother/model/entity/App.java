@@ -94,6 +94,12 @@ public class App implements Serializable {
     private Integer priority;
 
     /**
+     * 对话轮次
+     */
+    @Column("conversationRound")
+    private Integer conversationRound;
+
+    /**
      * 创建用户id
      */
     @Column("userId")
