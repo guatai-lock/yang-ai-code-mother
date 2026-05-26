@@ -128,25 +128,35 @@ public class FeaturedAppApplicationServiceImpl
             throw new BusinessException(ErrorCode.NO_AUTH_ERROR, "只能操作自己的申请");
         }
 
-        // 3. 根据操作类型处理
-        if ("CANCEL".equals(action)) {
-            // 只能撤销待审核的申请
-            if (!FeaturedAppStatusEnum.PENDING.getValue().equals(application.getStatus())) {
-                throw new BusinessException(ErrorCode.OPERATION_ERROR, "只能撤销待审核的申请");
+        // 3. 获取分布式锁（与 applyFeaturedApp/reviewApplications 共用锁，防止并发）
+        RLock lock = redissonClient.getLock("featured:apply:" + application.getAppId());
+        lock.lock();
+        try {
+            // 锁内重新读取，保证数据最新
+            application = getById(applicationId);
+
+            // 4. 根据操作类型处理
+            if ("CANCEL".equals(action)) {
+                // 只能撤销待审核的申请
+                if (!FeaturedAppStatusEnum.PENDING.getValue().equals(application.getStatus())) {
+                    throw new BusinessException(ErrorCode.OPERATION_ERROR, "只能撤销待审核的申请");
+                }
+
+                // 更新状态为已撤销
+                AppFeaturedApplication update = new AppFeaturedApplication();
+                update.setId(applicationId);
+                update.setStatus(FeaturedAppStatusEnum.CANCELLED.getValue());
+                boolean result = updateById(update);
+                ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR, "撤销申请失败");
+
+                log.info("用户撤销精选申请，申请ID: {}, 用户ID: {}", applicationId, loginUser.getId());
+                return true;
             }
 
-            // 更新状态为已撤销
-            AppFeaturedApplication update = new AppFeaturedApplication();
-            update.setId(applicationId);
-            update.setStatus(FeaturedAppStatusEnum.CANCELLED.getValue());
-            boolean result = updateById(update);
-            ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR, "撤销申请失败");
-
-            log.info("用户撤销精选申请，申请ID: {}, 用户ID: {}", applicationId, loginUser.getId());
-            return true;
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "不支持的操作类型");
+        } finally {
+            lock.unlock();
         }
-
-        throw new BusinessException(ErrorCode.PARAMS_ERROR, "不支持的操作类型");
     }
 
     @Override
@@ -191,6 +201,9 @@ public class FeaturedAppApplicationServiceImpl
         }
 
         // 3. 在事务中批量更新申请记录
+        // ⚠️ 注意：此方法没有 @Transactional 注解，TransactionTemplate 独占事务边界。
+        //    如果将来在 controller/service 外层添加 @Transactional，会导致 updateBatch
+        //    的 SQL 在嵌套事务中无法 flush，审核状态不提交。如需外层事务，请改用 REQUIRES_NEW。
         transactionTemplate.execute(status -> {
             boolean updateResult = updateBatch(updateList);
             if (!updateResult) {

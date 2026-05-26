@@ -41,6 +41,6 @@ public interface AppConstant {
      * 应用部署域名（含端口）
      * 注意：必须包含端口号，因为 Spring Boot 应用运行在 8123 端口
      */
-    String CODE_DEPLOY_HOST = "http://localhost:8123";
+    String CODE_DEPLOY_HOST = "http://localhost:8123/api/static";
 
 }

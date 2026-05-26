@@ -16,6 +16,7 @@ import com.guatai.yangaicodemother.core.handler.StreamHandlerExecutor;
 import com.guatai.yangaicodemother.exception.BusinessException;
 import com.guatai.yangaicodemother.exception.ErrorCode;
 import com.guatai.yangaicodemother.exception.ThrowUtils;
+import com.guatai.yangaicodemother.event.AppDeletedEvent;
 import com.guatai.yangaicodemother.model.dto.app.AppAddRequest;
 import com.guatai.yangaicodemother.model.dto.app.AppQueryRequest;
 import com.guatai.yangaicodemother.model.entity.User;
@@ -39,9 +40,9 @@ import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
+import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
 
 import java.io.File;
@@ -90,6 +91,9 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
 
     @Resource
     private RedissonClient redissonClient;
+    
+    @Resource
+    private ApplicationContext applicationContext;
     @Override
     public Long createApp(AppAddRequest appAddRequest, User loginUser) {
         // 参数校验
@@ -304,7 +308,7 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
         }
     }
     /**
-     * 删除应用时关联删除对话历史
+     * 删除应用时关联删除对话历史和AI生成文件
      *
      * @param id 应用ID
      * @return 是否成功
@@ -319,15 +323,77 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
         if (appId <= 0) {
             return false;
         }
-        // 删除关联的对话历史, 包含用户消息与ai消息
+
+        // 获取分布式锁（与 deployOffline/deployOnline 共用锁 key，防止并发冲突）
+        String lockKey = "app:deploy:lock:" + appId;
+        RLock lock = redissonClient.getLock(lockKey);
+
         try {
-            chatHistoryService.deleteByAppId(appId);
-        } catch (Exception e) {
-            // 记录日志但不阻止应用删除,容错设计
-            log.error("删除应用关联对话历史失败: {}", e.getMessage());
+            if (!lock.tryLock(3, -1, TimeUnit.SECONDS)) {
+                throw new BusinessException(ErrorCode.OPERATION_ERROR, "操作频繁，请稍后重试");
+            }
+
+            // 1. 查询应用信息（用于状态校验和事件发布）
+            App app = this.getById(appId);
+            ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR, "应用不存在");
+
+            // 2. 状态校验：只有 OFFLINE/null 状态可删除
+            validateDeletePermission(app);
+
+            // 3. 删除关联的对话历史
+            try {
+                chatHistoryService.deleteByAppId(appId);
+            } catch (Exception e) {
+                log.error("删除应用关联对话历史失败: {}", e.getMessage());
+            }
+
+            // 4. 删除应用（逻辑删除）
+            boolean result = super.removeById(id);
+
+            // 5. 发布删除事件，触发异步文件清理
+            if (result && app != null) {
+                applicationContext.publishEvent(new AppDeletedEvent(this, app));
+                log.info("已发布应用删除事件，appId: {}", appId);
+            }
+
+            return result;
+
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "操作被中断");
+        } finally {
+            if (lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
         }
-        // 删除应用
-        return super.removeById(id);
+    }
+    
+    /**
+     * 校验应用删除权限
+     * 
+     * 规则：
+     * - ONLINE：拒绝删除，需先下线
+     * - DEPLOYING：拒绝删除，避免文件锁冲突
+     * - OFFLINE：允许删除
+     * - null：允许删除（兼容旧数据）
+     */
+    private void validateDeletePermission(App app) {
+        String status = app.getDeployStatus();
+        
+        // 在线状态：拒绝删除
+        if (DeployStatusEnum.ONLINE.getValue().equals(status)) {
+            throw new BusinessException(ErrorCode.OPERATION_ERROR, 
+                    "应用处于在线状态，请先下线后再删除");
+        }
+        
+        // 部署中：拒绝删除
+        if (DeployStatusEnum.DEPLOYING.getValue().equals(status)) {
+            throw new BusinessException(ErrorCode.OPERATION_ERROR, 
+                    "应用正在部署中，请稍后再试");
+        }
+        
+        // OFFLINE 或 null：允许删除
+        log.debug("应用删除状态校验通过，appId: {}, status: {}", app.getId(), status);
     }
 
     /**
@@ -387,7 +453,6 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public String deployOffline(Long appId, User loginUser) {
         // 1. 参数校验
         ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "应用ID不能为空");
@@ -409,32 +474,42 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
             // 5. 状态校验
             validateStatusTransition(app.getDeployStatus(), DeployStatusEnum.OFFLINE);
 
-            // 6. 根据项目类型执行不同的归档策略
-            String archivePath;
+            // 6. 先保存文件操作所需的旧值（DB 更新后 deployKey 会被清空）
+            String oldDeployKey = app.getDeployKey();
             CodeGenTypeEnum codeGenType = CodeGenTypeEnum.getEnumByValue(app.getCodeGenType());
 
-            if (codeGenType == CodeGenTypeEnum.VUE_PROJECT) {
-                // Vue 项目：归档完整项目（源码 + dist 缓存）
-                archivePath = archiveVueProject(app.getDeployKey(), appId);
-            } else {
-                // HTML/Multi-file：直接归档部署目录
-                archivePath = archiveDeployDirectory(app.getDeployKey(), appId);
-            }
-
-            // 清理旧部署目录（Vue 的 archiveVueProject 不会自动清理，HTML 的
-            // archiveDeployDirectory 已用 move 移走，此处 del 是安全的无操作）
-            String oldDeployDir = AppConstant.CODE_DEPLOY_ROOT_DIR + File.separator + app.getDeployKey();
-            FileUtil.del(new File(oldDeployDir));
-
-            // 7. 更新数据库
+            // 7. 更新数据库（先于文件操作，保证状态一致）
             App updateApp = new App();
             updateApp.setId(appId);
             updateApp.setDeployStatus(DeployStatusEnum.OFFLINE.getValue());
-            updateApp.setArchivePath(archivePath);
-            updateApp.setDeployKey(null); // 清理对外访问链接
+            updateApp.setDeployKey(null);
             updateApp.setEditTime(LocalDateTime.now());
             boolean result = this.updateById(updateApp);
             ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR, "应用下线失败");
+            // ↑ DB 已提交，状态为 OFFLINE。
+            //   即使后续文件操作失败，也比"DB 仍显示 ONLINE 但文件已丢失"更安全
+
+            // 8. 文件归档（DB 已一致，文件操作失败不影响状态正确性）
+            String archivePath = null;
+            if (StrUtil.isNotBlank(oldDeployKey)) {
+                if (codeGenType == CodeGenTypeEnum.VUE_PROJECT) {
+                    archivePath = archiveVueProject(oldDeployKey, appId);
+                } else {
+                    archivePath = archiveDeployDirectory(oldDeployKey, appId);
+                }
+
+                // 清理旧部署目录
+                String oldDeployDir = AppConstant.CODE_DEPLOY_ROOT_DIR + File.separator + oldDeployKey;
+                FileUtil.del(new File(oldDeployDir));
+
+                // 回填 archivePath
+                if (StrUtil.isNotBlank(archivePath)) {
+                    App pathUpdate = new App();
+                    pathUpdate.setId(appId);
+                    pathUpdate.setArchivePath(archivePath);
+                    this.updateById(pathUpdate);
+                }
+            }
 
             log.info("应用下线成功，appId: {}, archivePath: {}", appId, archivePath);
             return "应用已下线，归档路径：" + archivePath;
@@ -450,7 +525,6 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public String deployOnline(Long appId, User loginUser) {
         // 1. 参数校验
         ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "应用ID不能为空");
@@ -462,7 +536,7 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
 
         try {
             // 3. 获取锁
-            if (!lock.tryLock(3,-1, TimeUnit.SECONDS)) { // Vue 构建可能需要更长时间
+            if (!lock.tryLock(3,-1, TimeUnit.SECONDS)) {
                 throw new BusinessException(ErrorCode.OPERATION_ERROR, "操作频繁，请稍后重试");
             }
 
@@ -472,18 +546,17 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
             // 5. 状态校验
             validateStatusTransition(app.getDeployStatus(), DeployStatusEnum.ONLINE);
 
-            // 6. 生成新的 deployKey
+            // 6. 保存归档路径（DB 更新后会清空）
+            String archivePath = app.getArchivePath();
             String deployKey = RandomUtil.randomString(6);
-
-            // 7. 根据项目类型执行不同的恢复策略
             CodeGenTypeEnum codeGenType = CodeGenTypeEnum.getEnumByValue(app.getCodeGenType());
 
+            // 7. 文件恢复优先执行（COPY 而非 MOVE，保留归档副本）
+            //    即使后续 DB 更新失败，文件已在部署目录中，状态仍为 OFFLINE 可重试
             if (codeGenType == CodeGenTypeEnum.VUE_PROJECT) {
-                // Vue 项目：恢复源码 → 重新构建 → 部署 dist
-                restoreAndBuildVueProject(app.getArchivePath(), deployKey, appId);
+                restoreAndBuildVueProject(archivePath, deployKey, appId);
             } else {
-                // HTML/Multi-file：直接恢复部署目录
-                restoreDeployDirectory(app.getArchivePath(), deployKey);
+                restoreDeployDirectory(archivePath, deployKey);
             }
 
             // 8. 更新数据库
@@ -492,21 +565,33 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
             updateApp.setDeployStatus(DeployStatusEnum.ONLINE.getValue());
             updateApp.setDeployKey(deployKey);
             updateApp.setDeployedTime(LocalDateTime.now());
-            updateApp.setArchivePath(null); // 清空归档路径
+            updateApp.setArchivePath(null);
             updateApp.setEditTime(LocalDateTime.now());
 
-            // Vue 项目记录构建时间
             if (codeGenType == CodeGenTypeEnum.VUE_PROJECT) {
                 updateApp.setLastBuildTime(LocalDateTime.now());
             }
 
             boolean result = this.updateById(updateApp);
-            ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR, "应用上线失败");
+            if (!result) {
+                // 补偿：DB 更新失败，清理部署目录，保留归档以便重试
+                FileUtil.del(new File(AppConstant.CODE_DEPLOY_ROOT_DIR + File.separator + deployKey));
+                throw new BusinessException(ErrorCode.OPERATION_ERROR, "应用上线失败");
+            }
 
-            // 9. 返回可访问的 URL
+            // 9. DB 更新成功后清理归档目录（文件已在部署目录中）
+            if (StrUtil.isNotBlank(archivePath)) {
+                try {
+                    FileUtil.del(new File(archivePath));
+                } catch (Exception e) {
+                    log.warn("清理归档目录失败，archivePath: {}", archivePath, e);
+                }
+            }
+
+            // 10. 返回可访问的 URL
             String appDeployUrl = String.format("%s/%s/", AppConstant.CODE_DEPLOY_HOST, deployKey);
 
-            // 10. 异步生成截图
+            // 11. 异步生成截图
             generateAppScreenshotAsync(appId, appDeployUrl);
 
             log.info("应用上线成功，appId: {}, deployKey: {}, url: {}", appId, deployKey, appDeployUrl);
@@ -656,9 +741,11 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
             FileUtil.del(new File(sourceArchiveDir, "dist"));
 
             // 2. 归档 dist（如果存在，用于快速恢复）
+            // 注意：先清理目标目录，防止 FileUtil.copy 在目录已存在时嵌套复制
             File distDir = new File(sourcePath, "dist");
             if (distDir.exists()) {
                 File distArchiveDir = new File(archivePath + "/dist");
+                FileUtil.del(distArchiveDir); // 防止多次归档导致 dist/dist/ 嵌套
                 FileUtil.copy(distDir, distArchiveDir, true);
                 log.info("Vue 项目 dist 目录已缓存");
             }
@@ -711,6 +798,8 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
             File cachedDist = new File(archivePath + "/dist");
             if (cachedDist.exists()) {
                 log.info("使用缓存的 dist 目录快速恢复 Vue 项目");
+                // 先清理目标目录，确保扁平展开
+                FileUtil.del(new File(deployDirPath));
                 FileUtil.copyContent(cachedDist, new File(deployDirPath), true);
                 return;
             }
@@ -731,6 +820,8 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
 
             // 3. 复制 dist 到部署目录
             File distDir = new File(restorePath, "dist");
+            // 先清理目标目录，确保扁平展开
+            FileUtil.del(new File(deployDirPath));
             FileUtil.copyContent(distDir, new File(deployDirPath), true);
             log.info("Vue 项目部署成功：{} → {}", distDir.getAbsolutePath(), deployDirPath);
 
@@ -751,8 +842,10 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
             File archiveDir = new File(archivePath);
             ThrowUtils.throwIf(!archiveDir.exists(), ErrorCode.SYSTEM_ERROR, "归档目录不存在");
 
-            // 移动目录回部署目录
-            FileUtil.move(archiveDir, new File(targetPath), true);
+            // 清理目标目录（防止 Hutool FileUtil.copy 在目录已存在时嵌套复制）
+            FileUtil.del(new File(targetPath));
+            // 复制内容到部署目录（保留归档，DB 更新成功后由调用方清理）
+            FileUtil.copyContent(archiveDir, new File(targetPath), true);
             log.info("部署目录已恢复：{} → {}", archivePath, targetPath);
 
         } catch (Exception e) {
