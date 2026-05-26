@@ -37,6 +37,9 @@ public class StaticResourceController {
     // 应用部署根目录（用于浏览）
     private static final String PREVIEW_ROOT_DIR = AppConstant.CODE_DEPLOY_ROOT_DIR;
 
+    // 应用生成目录（作为部署目录的回退，支持生成后立即预览）
+    private static final String CODE_OUTPUT_ROOT_DIR = AppConstant.CODE_OUTPUT_ROOT_DIR;
+
 
     /**
      * 提供静态资源访问，支持目录重定向
@@ -71,17 +74,21 @@ public class StaticResourceController {
             if (resourcePath.equals("/")) {
                 resourcePath = "/index.html";
             }
-            // 构建文件路径
+            // 构建文件路径（优先从部署目录读取）
             String filePath = PREVIEW_ROOT_DIR + "/" + deployKey + resourcePath;
             File file = new File(filePath);
-            // 检查文件是否存在
+            // 如果部署目录不存在，回退到生成目录（支持代码生成后立即预览）
+            if (!file.exists()) {
+                String outputPath = CODE_OUTPUT_ROOT_DIR + "/" + deployKey + resourcePath;
+                file = new File(outputPath);
+            }
             if (!file.exists()) {
                 return ResponseEntity.notFound().build();
             }
             // 返回文件资源
             Resource resource = new FileSystemResource(file);
             return ResponseEntity.ok()
-                    .header("Content-Type", getContentTypeWithCharset(filePath))
+                    .header("Content-Type", getContentTypeWithCharset(file.getAbsolutePath()))
                     .body(resource);
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
