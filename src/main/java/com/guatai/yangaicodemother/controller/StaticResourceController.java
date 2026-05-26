@@ -34,8 +34,8 @@ public class StaticResourceController {
     @jakarta.annotation.Resource
     private AppService appService;
 
-    // 应用生成根目录（用于浏览）
-    private static final String PREVIEW_ROOT_DIR = AppConstant.CODE_OUTPUT_ROOT_DIR;
+    // 应用部署根目录（用于浏览）
+    private static final String PREVIEW_ROOT_DIR = AppConstant.CODE_DEPLOY_ROOT_DIR;
 
 
     /**
