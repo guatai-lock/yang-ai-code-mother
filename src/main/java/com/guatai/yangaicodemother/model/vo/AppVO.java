@@ -52,6 +52,11 @@ public class AppVO implements Serializable {
     private Integer priority;
 
     /**
+     * 对话轮次
+     */
+    private Integer conversationRound;
+
+    /**
      * 创建用户id
      */
     private Long userId;
