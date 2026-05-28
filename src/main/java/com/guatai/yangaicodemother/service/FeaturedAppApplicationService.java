@@ -69,4 +69,12 @@ public interface FeaturedAppApplicationService extends IService<AppFeaturedAppli
      * @return true=有待审核申请, false=无
      */
     boolean hasPendingApplication(Long appId);
+
+    /**
+     * 批量取消应用的精选状态（管理员）
+     *
+     * @param appIds 应用ID列表（最多100个）
+     * @param adminUser 管理员
+     */
+    void unfeatureApp(List<Long> appIds, User adminUser);
 }

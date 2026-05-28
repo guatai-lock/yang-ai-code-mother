@@ -355,32 +355,37 @@ public class AppDeletionCleanupTest {
 
     @Test
     @Order(32)
-    @DisplayName("[精选申请] 删除已 APPROVED 的应用不影响已通过记录")
-    void deleteOfflineApp_shouldNotAffectApprovedFeaturedApplication() {
+    @DisplayName("[精选申请] 删除已 APPROVED 的应用会取消精选申请并重置 priority")
+    void deleteOfflineApp_shouldCancelApprovedFeaturedApplication() {
         insertApp("OFFLINE", null, archivePath, TEST_CODE_TYPE);
 
-        // 先设应用为非精选
-        jdbcTemplate.update("UPDATE app SET priority = 0 WHERE id = ?", TEST_APP_ID);
-
-        // 申请 + 审核通过
+        // 申请 + 审核通过（reviewApplications 会将 priority 设为 99）
         User user = createTestUser();
         Long applicationId = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请", user);
         featuredAppApplicationService.reviewApplications(
                 java.util.List.of(applicationId), true, "通过",
                 User.builder().id(1L).userName("admin").build());
 
-        // 验证已 APPROVED
+        // 验证已 APPROVED，priority=99
         AppFeaturedApplication before = featuredAppApplicationService.getById(applicationId);
         assertEquals(FeaturedAppStatusEnum.APPROVED.getValue(), before.getStatus());
+        Integer priorityBefore = jdbcTemplate.queryForObject(
+                "SELECT priority FROM app WHERE id = ?", Integer.class, TEST_APP_ID);
+        assertEquals(Integer.valueOf(99), priorityBefore,
+                "审核通过后 priority 应为 99");
 
         // 删除应用
         assertTrue(appService.removeById(TEST_APP_ID));
 
-        // APPROVED 不应被取消（监听器只取消 PENDING）
+        // APPROVED 应被取消 + priority 重置为 0
         AppFeaturedApplication after = featuredAppApplicationService.getById(applicationId);
         assertNotNull(after);
-        assertEquals(FeaturedAppStatusEnum.APPROVED.getValue(), after.getStatus(),
-                "已通过的精选申请不受应用删除影响");
+        assertEquals(FeaturedAppStatusEnum.CANCELLED.getValue(), after.getStatus(),
+                "应用删除后已通过的精选申请应被取消");
+        Integer priorityAfter = jdbcTemplate.queryForObject(
+                "SELECT priority FROM app WHERE id = ?", Integer.class, TEST_APP_ID);
+        assertEquals(Integer.valueOf(0), priorityAfter,
+                "应用删除后 priority 应重置为 0");
     }
 
     // ====================================================================

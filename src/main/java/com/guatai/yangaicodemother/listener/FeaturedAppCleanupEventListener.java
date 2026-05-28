@@ -7,6 +7,7 @@ import com.guatai.yangaicodemother.model.enums.FeaturedAppStatusEnum;
 import com.mybatisflex.core.query.QueryWrapper;
 import jakarta.annotation.Resource;
 import java.time.LocalDateTime;
+import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
@@ -27,16 +28,19 @@ public class FeaturedAppCleanupEventListener {
         log.info("应用删除事件触发精选申请清理，appId: {}", appId);
 
         try {
+            // 1. 将 PENDING 和 APPROVED 的精选申请置为 CANCELLED
             AppFeaturedApplication update = new AppFeaturedApplication();
             update.setStatus(FeaturedAppStatusEnum.CANCELLED.getValue());
             update.setUpdateTime(LocalDateTime.now());
 
             QueryWrapper query = QueryWrapper.create()
                     .eq("appId", appId)
-                    .eq("status", FeaturedAppStatusEnum.PENDING.getValue());
+                    .in("status", List.of(
+                            FeaturedAppStatusEnum.PENDING.getValue(),
+                            FeaturedAppStatusEnum.APPROVED.getValue()));
 
-            featuredAppMapper.updateByQuery(update, query);
-            log.info("精选申请清理完成，appId: {}", appId);
+            int updatedCount = featuredAppMapper.updateByQuery(update, query);
+            log.info("精选申请清理完成，appId: {}, 影响记录数: {}", appId, updatedCount);
         } catch (Exception e) {
             log.error("清理精选申请失败，appId: {}", appId, e);
         }

@@ -22,6 +22,8 @@ import com.mybatisflex.core.query.QueryWrapper;
 import com.mybatisflex.spring.service.impl.ServiceImpl;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.redisson.api.RLock;
@@ -58,6 +60,9 @@ public class FeaturedAppApplicationServiceImpl
     private PlatformTransactionManager transactionManager;
 
     private TransactionTemplate transactionTemplate;
+
+    @Resource
+    private CacheManager cacheManager;
 
     @PostConstruct
     public void init() {
@@ -213,11 +218,12 @@ public class FeaturedAppApplicationServiceImpl
             return null;
         });
 
-        // 4. 如果通过审核，在事务外批量更新应用优先级
+        // 4. 如果通过审核，在事务外批量更新应用优先级 + 驱逐缓存
         if (approved && CollUtil.isNotEmpty(approvedAppIds)) {
             batchUpdateAppPriority(approvedAppIds);
-
-            log.info("批量审核通过 {} 个应用，缓存将在过期后自动刷新", approvedAppIds.size());
+            // 驱逐精选应用缓存，确保新通过的应用立即出现在精选列表
+            evictGoodAppPageCache();
+            log.info("批量审核通过 {} 个应用，已主动刷新缓存", approvedAppIds.size());
         }
 
         log.info("批量审核完成，总数: {}, 成功: {}, 审核结果: {}, 审核人: {}",
@@ -226,6 +232,61 @@ public class FeaturedAppApplicationServiceImpl
             adminUser.getId());
 
         return pendingApplications.size();
+    }
+
+    @Override
+    public void unfeatureApp(List<Long> appIds, User adminUser) {
+        // 0. 参数校验
+        ThrowUtils.throwIf(CollUtil.isEmpty(appIds), ErrorCode.PARAMS_ERROR, "应用ID列表不能为空");
+        ThrowUtils.throwIf(appIds.size() > 100, ErrorCode.PARAMS_ERROR, "单次最多取消100个应用的精选状态");
+
+        // 1. 查找所有已通过的精选申请
+        QueryWrapper query = QueryWrapper.create()
+            .in("appId", appIds)
+            .eq("status", FeaturedAppStatusEnum.APPROVED.getValue());
+
+        List<AppFeaturedApplication> approvedList = list(query);
+
+        if (CollUtil.isEmpty(approvedList)) {
+            throw new BusinessException(ErrorCode.NOT_FOUND_ERROR, "所选应用没有已通过的精选申请");
+        }
+
+        // 2. 收集有 APPROVED 记录的应用ID
+        Set<Long> actionableAppIds = approvedList.stream()
+            .map(AppFeaturedApplication::getAppId)
+            .collect(Collectors.toSet());
+
+        // 3. 将所有 APPROVED 记录置为 CANCELLED
+        List<AppFeaturedApplication> updateList = approvedList.stream().map(app -> {
+            AppFeaturedApplication update = new AppFeaturedApplication();
+            update.setId(app.getId());
+            update.setStatus(FeaturedAppStatusEnum.CANCELLED.getValue());
+            update.setReviewerId(adminUser.getId());
+            update.setReviewTime(LocalDateTime.now());
+            return update;
+        }).collect(Collectors.toList());
+
+        transactionTemplate.execute(status -> {
+            boolean updateResult = updateBatch(updateList);
+            if (!updateResult) {
+                status.setRollbackOnly();
+                throw new BusinessException(ErrorCode.OPERATION_ERROR, "批量取消精选失败");
+            }
+            return null;
+        });
+
+        // 4. 批量重置应用 priority 为 0
+        for (Long appId : actionableAppIds) {
+            App appUpdate = new App();
+            appUpdate.setId(appId);
+            appUpdate.setPriority(AppConstant.DEFAULT_APP_PRIORITY);
+            appService.updateById(appUpdate);
+        }
+
+        // 5. 驱逐缓存
+        evictGoodAppPageCache();
+
+        log.info("管理员 {} 已批量取消 {} 个应用的精选状态", adminUser.getId(), actionableAppIds.size());
     }
 
     @Override
@@ -393,5 +454,19 @@ public class FeaturedAppApplicationServiceImpl
 
             return vo;
         }).collect(Collectors.toList());
+    }
+
+    /**
+     * 驱逐精选应用列表缓存
+     */
+    private void evictGoodAppPageCache() {
+        try {
+            Cache cache = cacheManager.getCache("good_app_page");
+            if (cache != null) {
+                cache.clear();
+            }
+        } catch (Exception e) {
+            log.warn("清除精选应用缓存失败", e);
+        }
     }
 }
