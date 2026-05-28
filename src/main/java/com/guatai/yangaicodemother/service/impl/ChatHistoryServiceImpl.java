@@ -28,6 +28,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * 对话历史 服务层实现。
@@ -139,54 +140,63 @@ public class ChatHistoryServiceImpl extends ServiceImpl<ChatHistoryMapper, ChatH
         return queryWrapper;
     }
     @Override
-    public List<ChatHistory> listAllChatHistoryForExport(Long appId, User loginUser) {
+    public String exportSelectedChatHistoryAsMarkdown(Long appId, User loginUser, List<Long> messageIds) {
+        // 1. 校验参数
         ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "应用ID不能为空");
         ThrowUtils.throwIf(loginUser == null, ErrorCode.NOT_LOGIN_ERROR);
-        // 验证权限：只有应用创建者和管理员可以查看
+        ThrowUtils.throwIf(messageIds == null || messageIds.isEmpty(), ErrorCode.PARAMS_ERROR, "请选择要导出的消息");
+        ThrowUtils.throwIf(messageIds.size() > 200, ErrorCode.PARAMS_ERROR, "单次最多导出200条消息");
+        // 2. 去重
+        List<Long> distinctIds = messageIds.stream().distinct().collect(Collectors.toList());
+        // 3. 验证权限：只有应用创建者和管理员可以导出
         App app = appService.getById(appId);
         ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR, "应用不存在");
         boolean isAdmin = UserConstant.ADMIN_ROLE.equals(loginUser.getUserRole());
         boolean isCreator = app.getUserId().equals(loginUser.getId());
-        ThrowUtils.throwIf(!isAdmin && !isCreator, ErrorCode.NO_AUTH_ERROR, "无权查看该应用的对话历史");
-        // 查询所有对话历史，按创建时间升序
+        ThrowUtils.throwIf(!isAdmin && !isCreator, ErrorCode.NO_AUTH_ERROR, "无权导出该应用的对话历史");
+        // 4. 查询消息
         QueryWrapper queryWrapper = QueryWrapper.create()
+                .in("id", distinctIds)
                 .eq("appId", appId)
                 .orderBy("createTime", true);
-        return this.list(queryWrapper);
-    }
-    @Override
-    public String exportChatHistoryAsMarkdown(Long appId, User loginUser) {
-        List<ChatHistory> historyList = listAllChatHistoryForExport(appId, loginUser);
-        if (historyList == null || historyList.isEmpty()) {
-            return "# 对话记录\n\n暂无对话记录。";
+        List<ChatHistory> historyList = this.list(queryWrapper);
+        // 5. 校验查询结果
+        ThrowUtils.throwIf(historyList == null || historyList.isEmpty(), ErrorCode.NOT_FOUND_ERROR, "未找到对应的对话记录");
+        ThrowUtils.throwIf(historyList.size() != distinctIds.size(), ErrorCode.NOT_FOUND_ERROR, "部分消息ID不存在或不属于该应用");
+        // 6. 将扁平消息列表按 (user, ai) 配对为轮次
+        List<String[]> rounds = new ArrayList<>();
+        for (int i = 0; i < historyList.size(); i++) {
+            ChatHistory msg = historyList.get(i);
+            if ("user".equals(msg.getMessageType())) {
+                String userMsg = msg.getMessage();
+                String aiMsg = null;
+                if (i + 1 < historyList.size() && "ai".equals(historyList.get(i + 1).getMessageType())) {
+                    aiMsg = historyList.get(i + 1).getMessage();
+                    i++;
+                }
+                rounds.add(new String[]{userMsg, aiMsg});
+            }
         }
-        App app = appService.getById(appId);
-        String appName = app != null ? app.getAppName() : "未知应用";
+        // 7. 构建 Markdown
+        String appName = app.getAppName() != null ? app.getAppName() : "未知应用";
         String userName = StrUtil.blankToDefault(loginUser.getUserName(), "未知用户");
         String exportTime = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
         StringBuilder sb = new StringBuilder();
-        // 文件头
         sb.append("# 对话记录：").append(appName).append("\n\n");
         sb.append("- **应用 ID**：").append(appId).append("\n");
         sb.append("- **创建者**：").append(userName).append("\n");
         sb.append("- **导出时间**：").append(exportTime).append("\n");
-        sb.append("- **对话轮次**：").append((historyList.size() + 1) / 2).append("\n\n");
+        sb.append("- **导出消息数**：").append(historyList.size()).append(" 条\n\n");
         sb.append("---\n\n");
-        // 按 (user, ai) 配对输出
-        int round = 0;
-        for (int i = 0; i < historyList.size(); i++) {
-            ChatHistory msg = historyList.get(i);
-            if ("user".equals(msg.getMessageType())) {
-                round++;
-                sb.append("## 第 ").append(round).append(" 轮\n\n");
-                sb.append("### 用户\n\n").append(msg.getMessage()).append("\n\n");
-                // 检查下一条是否为 AI 响应
-                if (i + 1 < historyList.size() && "ai".equals(historyList.get(i + 1).getMessageType())) {
-                    sb.append("### AI\n\n").append(historyList.get(i + 1).getMessage()).append("\n\n");
-                    i++; // 跳过已处理的 AI 消息
-                }
-                sb.append("---\n\n");
+        for (int i = 0; i < rounds.size(); i++) {
+            int roundNum = i + 1;
+            String[] pair = rounds.get(i);
+            sb.append("## 第 ").append(roundNum).append(" 轮\n\n");
+            sb.append("### 用户\n\n").append(pair[0]).append("\n\n");
+            if (pair[1] != null) {
+                sb.append("### AI\n\n").append(pair[1]).append("\n\n");
             }
+            sb.append("---\n\n");
         }
         return sb.toString();
     }
