@@ -59,8 +59,14 @@ public class StaticResourceController {
             if (appId != null) {
                 App app = appService.getById(appId);
                 // 明确下线的应用禁止访问；未部署/部署中/null 状态（兼容旧数据）允许预览
-                if (app == null || DeployStatusEnum.OFFLINE.getValue().equals(app.getDeployStatus())) {
+                if (app == null) {
                     return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+                }
+                if (DeployStatusEnum.OFFLINE.getValue().equals(app.getDeployStatus())) {
+                    // 部署key是6位随机字符，用长度区分：短key是部署URL，长key是预览URL
+                    if (deployKey.length() <= 10) {
+                        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+                    }
                 }
             }
 

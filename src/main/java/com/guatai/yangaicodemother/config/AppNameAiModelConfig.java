@@ -8,6 +8,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Scope;
 
+import java.time.Duration;
+
 /**
  * AI 应用名称生成模型配置
  * 使用多例模式，支持并发调用
@@ -45,6 +47,7 @@ public class AppNameAiModelConfig {
                 .temperature(temperature)
                 .logRequests(logRequests)
                 .logResponses(logResponses)
+                .timeout(Duration.ofSeconds(120))
                 .build();
     }
 }

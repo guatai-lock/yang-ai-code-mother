@@ -53,14 +53,11 @@ public interface ChatHistoryService extends IService<ChatHistory> {
     QueryWrapper getQueryWrapper(ChatHistoryQueryRequest chatHistoryQueryRequest);
 
     /**
-     * 获取应用的所有对话历史（按创建时间升序），用于导出
+     * 按消息ID列表导出选中的对话历史为 Markdown 字符串
+     *
+     * @param messageIds 选中的消息ID列表（最多200条）
      */
-    List<ChatHistory> listAllChatHistoryForExport(Long appId, User loginUser);
-
-    /**
-     * 导出应用对话历史为 Markdown 字符串
-     */
-    String exportChatHistoryAsMarkdown(Long appId, User loginUser);
+    String exportSelectedChatHistoryAsMarkdown(Long appId, User loginUser, List<Long> messageIds);
 
     /**
      * 对话记忆初始化时，需要从数据库中加载对话历史到记忆中

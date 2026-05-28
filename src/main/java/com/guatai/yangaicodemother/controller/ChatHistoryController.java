@@ -55,14 +55,15 @@ public class ChatHistoryController {
         return ResultUtils.success(result);
     }
     /**
-     * 导出应用对话历史为 Markdown 文件
+     * 按消息ID列表导出选中的对话历史为 Markdown 文件
      */
-    @GetMapping("/app/{appId}/export")
-    public void exportChatHistory(@PathVariable Long appId,
-                                  HttpServletRequest request,
-                                  HttpServletResponse response) throws Exception {
+    @PostMapping("/app/{appId}/export/selected")
+    public void exportSelectedChatHistory(@PathVariable Long appId,
+                                          @RequestBody List<Long> messageIds,
+                                          HttpServletRequest request,
+                                          HttpServletResponse response) throws Exception {
         User loginUser = userService.getLoginUser(request);
-        String markdown = chatHistoryService.exportChatHistoryAsMarkdown(appId, loginUser);
+        String markdown = chatHistoryService.exportSelectedChatHistoryAsMarkdown(appId, loginUser, messageIds);
         response.setStatus(HttpServletResponse.SC_OK);
         response.setContentType("text/markdown; charset=UTF-8");
         response.setHeader("Content-Disposition",
