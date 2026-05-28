@@ -17,6 +17,7 @@ import com.guatai.yangaicodemother.service.UserService;
 import com.mybatisflex.core.paginate.Page;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -136,6 +137,22 @@ public class FeaturedAppApplicationController {
             adminUser
         );
         return ResultUtils.success(successCount);
+    }
+
+    /**
+     * 管理员批量取消应用精选状态
+     *
+     * @param appIds 应用ID列表
+     * @param httpRequest HTTP请求
+     * @return 是否成功
+     */
+    @PostMapping("/admin/unfeature")
+    @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
+    public BaseResponse<Boolean> unfeatureApp(@RequestBody List<Long> appIds,
+                                               HttpServletRequest httpRequest) {
+        User adminUser = userService.getLoginUser(httpRequest);
+        featuredAppApplicationService.unfeatureApp(appIds, adminUser);
+        return ResultUtils.success(true);
     }
 
     /**

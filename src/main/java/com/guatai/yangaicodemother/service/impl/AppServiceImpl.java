@@ -40,6 +40,8 @@ import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
@@ -94,6 +96,9 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
     
     @Resource
     private ApplicationContext applicationContext;
+
+    @Resource
+    private CacheManager cacheManager;
     @Override
     public Long createApp(AppAddRequest appAddRequest, User loginUser) {
         // 参数校验
@@ -352,14 +357,23 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
                 log.error("删除应用关联对话历史失败: {}", e.getMessage());
             }
 
-            // 4. 删除应用（逻辑删除）
+            // 4. 重置精选优先级（必须在逻辑删除前执行，避免 MyBatis-Flex 逻辑删除过滤）
+            App priorityReset = new App();
+            priorityReset.setId(appId);
+            priorityReset.setPriority(AppConstant.DEFAULT_APP_PRIORITY);
+            this.updateById(priorityReset);
+
+            // 5. 删除应用（逻辑删除）
             boolean result = super.removeById(id);
 
-            // 5. 发布删除事件，触发异步文件清理
+            // 6. 发布删除事件，触发异步文件清理
             if (result && app != null) {
                 applicationContext.publishEvent(new AppDeletedEvent(this, app));
                 log.info("已发布应用删除事件，appId: {}", appId);
             }
+
+            // 7. 驱逐精选应用缓存，确保列表不包含已删除应用
+            evictGoodAppPageCache();
 
             return result;
 
@@ -858,6 +872,20 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
 
         } catch (Exception e) {
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "恢复失败：" + e.getMessage());
+        }
+    }
+
+    /**
+     * 驱逐精选应用列表缓存
+     */
+    private void evictGoodAppPageCache() {
+        try {
+            Cache cache = cacheManager.getCache("good_app_page");
+            if (cache != null) {
+                cache.clear();
+            }
+        } catch (Exception e) {
+            log.warn("清除精选应用缓存失败", e);
         }
     }
 }
