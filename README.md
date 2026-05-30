@@ -60,7 +60,7 @@
 - **对话历史**：按应用查看完整对话记录
 - **系统监控**：AI 模型调用监控、性能指标监控
 
-![](https://github.com/user-attachments/assets/75fa6e87-db8b-44d9-be72-7db6aa363e88/)
+<img width="1909" height="885" alt="15921cbfbbdb2b28f68cec13715162bb" src="https://github.com/user-attachments/assets/46e0c3ad-89e4-4b25-8fe8-1f99cb4f966d" />
 
 ## 二、项目优势
 
