@@ -1,5 +1,4 @@
 package com.guatai.yangaicodemother.service.impl;
-
 import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.util.StrUtil;
 import com.guatai.yangaicodemother.exception.ErrorCode;
@@ -10,7 +9,6 @@ import com.guatai.yangaicodemother.utils.WebScreenshotUtils;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-
 import java.io.File;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;

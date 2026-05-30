@@ -40,4 +40,9 @@ public interface AppConstant {
      */
     String CODE_DEPLOY_HOST = "http://localhost:8123/api/static";
 
+    /**
+     * COS 用户上传图片目录前缀
+     */
+    String COS_USER_IMAGES_DIR = "/user_images";
+
 }

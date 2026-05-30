@@ -4,6 +4,7 @@ import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.util.StrUtil;
 import com.guatai.yangaicodemother.common.AppConstant;
 import com.guatai.yangaicodemother.service.AppCleanupService;
+import com.guatai.yangaicodemother.service.AppImageService;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -34,6 +35,9 @@ public class AppCleanupServiceImpl implements AppCleanupService {
     
     @Resource
     private StringRedisTemplate stringRedisTemplate;
+
+    @Resource
+    private AppImageService appImageService;
     
     @Override
     @Async("cleanupExecutor")
@@ -56,7 +60,11 @@ public class AppCleanupServiceImpl implements AppCleanupService {
             // 3. 清理Redis对话记忆（必清）
             if (cleanupRedisChatMemory(appId)) successCount++;
             else skipCount++;
-            
+
+            // 4. 清理图片资源记录（必清）
+            if (cleanupAppImages(appId)) successCount++;
+            else skipCount++;
+
             log.info("应用数据清理完成，appId: {}, 成功: {}, 跳过: {}", appId, successCount, skipCount);
             
         } catch (Exception e) {
@@ -155,6 +163,20 @@ public class AppCleanupServiceImpl implements AppCleanupService {
             }
         } catch (Exception e) {
             log.error("删除{}失败: {}", description, path, e);
+            return false;
+        }
+    }
+
+    /**
+     * 清理应用图片资源记录
+     */
+    private boolean cleanupAppImages(Long appId) {
+        try {
+            appImageService.deleteByAppId(appId);
+            log.info("应用图片资源记录已清理，appId: {}", appId);
+            return true;
+        } catch (Exception e) {
+            log.error("清理应用图片资源记录失败，appId: {}", appId, e);
             return false;
         }
     }

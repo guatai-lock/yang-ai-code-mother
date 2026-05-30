@@ -7,6 +7,7 @@ package com.guatai.yangaicodemother.core;
  *
  */
 
+import cn.hutool.core.collection.CollUtil;
 import cn.hutool.json.JSONUtil;
 import com.guatai.yangaicodemother.ai.AiCodeGeneratorService;
 import com.guatai.yangaicodemother.ai.AiCodeGeneratorServiceFactory;
@@ -22,6 +23,8 @@ import com.guatai.yangaicodemother.core.saver.CodeFileSaverExecutor;
 import com.guatai.yangaicodemother.exception.BusinessException;
 import com.guatai.yangaicodemother.exception.ErrorCode;
 import com.guatai.yangaicodemother.model.enums.CodeGenTypeEnum;
+import com.guatai.yangaicodemother.model.vo.AppImageVO;
+import com.guatai.yangaicodemother.service.AppImageService;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.service.TokenStream;
 import dev.langchain4j.service.tool.ToolExecution;
@@ -32,6 +35,7 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import java.io.File;
+import java.util.List;
 
 /**
  * AI 代码生成外观类，组合生成和保存功能
@@ -46,6 +50,9 @@ public class AiCodeGeneratorFacade {
     @Autowired
     private VueProjectBuilder vueProjectBuilder;
 
+    @Resource
+    private AppImageService appImageService;
+
     /**
      * 统一入口：根据类型生成并保存代码（流式，使用 appId）
      *
@@ -57,22 +64,24 @@ public class AiCodeGeneratorFacade {
         if (codeGenTypeEnum == null) {
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "生成类型为空");
         }
+        // 富化用户消息：注入已上传的图片信息
+        String enrichedMessage = enrichWithImageContext(userMessage, appId);
         // 根据 appId 获取对应的 AiCodeGeneratorService类实例
         AiCodeGeneratorService codeGeneratorService = aiCodeGeneratorServiceFactory.getAiCodeGeneratorService(appId,codeGenTypeEnum);
         return switch (codeGenTypeEnum) {
             case HTML -> {
                 // 生成 HTML 代码流
-                Flux<String> codeStream = codeGeneratorService.generateHtmlCodeStream(userMessage);
+                Flux<String> codeStream = codeGeneratorService.generateHtmlCodeStream(enrichedMessage);
                 yield processCodeStream(codeStream, CodeGenTypeEnum.HTML, appId);
             }
             case MULTI_FILE -> {
                 // 生成多文件代码流
-                Flux<String> codeStream = codeGeneratorService.generateMultiFileCodeStream(userMessage);
+                Flux<String> codeStream = codeGeneratorService.generateMultiFileCodeStream(enrichedMessage);
                 yield processCodeStream(codeStream, CodeGenTypeEnum.MULTI_FILE, appId);
             }
             case VUE_PROJECT -> {
                 // 生成 Vue 项目代码流
-                TokenStream codeStream = codeGeneratorService.generateVueProjectCodeStream(appId, userMessage);
+                TokenStream codeStream = codeGeneratorService.generateVueProjectCodeStream(appId, enrichedMessage);
                 yield processTokenStream(codeStream,appId);
             }
             default -> {
@@ -92,15 +101,17 @@ public class AiCodeGeneratorFacade {
         if (codeGenTypeEnum == null) {
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "生成类型为空");
         }
+        // 富化用户消息：注入已上传的图片信息
+        String enrichedMessage = enrichWithImageContext(userMessage, appId);
         // 根据 appId 获取对应的 AiCodeGeneratorService
         AiCodeGeneratorService codeGeneratorService = aiCodeGeneratorServiceFactory.getAiCodeGeneratorService(appId);
         return switch (codeGenTypeEnum) {
             case HTML -> {
-                HtmlCodeResult result = codeGeneratorService.generateHtmlCode(userMessage);
+                HtmlCodeResult result = codeGeneratorService.generateHtmlCode(enrichedMessage);
                 yield CodeFileSaverExecutor.executeSaver(result, CodeGenTypeEnum.HTML, appId);
             }
             case MULTI_FILE -> {
-                MultiFileCodeResult result = codeGeneratorService.generateMultiFileCode(userMessage);
+                MultiFileCodeResult result = codeGeneratorService.generateMultiFileCode(enrichedMessage);
                 yield CodeFileSaverExecutor.executeSaver(result, CodeGenTypeEnum.MULTI_FILE, appId);
             }
             default -> {
@@ -109,6 +120,40 @@ public class AiCodeGeneratorFacade {
             }
         };
     }
+
+    /**
+     * 富化用户消息：在用户消息前注入已上传的图片资源信息，供 AI 参考使用
+     *
+     * @param userMessage 用户原始消息
+     * @param appId       应用ID
+     * @return 富化后的消息
+     */
+    private String enrichWithImageContext(String userMessage, Long appId) {
+        try {
+            List<AppImageVO> images = appImageService.getRecentImages(appId, 10);
+            if (CollUtil.isEmpty(images)) {
+                return userMessage;
+            }
+            StringBuilder sb = new StringBuilder();
+            sb.append("【可用的图片资源】\n");
+            sb.append("以下图片资源已上传到当前应用，请在生成的代码中优先使用这些图片（而不是 picsum.photos 等占位服务）：\n\n");
+            for (int i = 0; i < images.size(); i++) {
+                AppImageVO img = images.get(i);
+                sb.append(i + 1).append(". ");
+                if (img.getDescription() != null) {
+                    sb.append(img.getDescription()).append(" - ");
+                }
+                sb.append(img.getOriginalName()).append("\n");
+                sb.append("   URL: ").append(img.getCosUrl()).append("\n\n");
+            }
+            sb.append("用户需求：").append(userMessage);
+            return sb.toString();
+        } catch (Exception e) {
+            log.warn("获取上传图片信息失败，跳过图片上下文注入: {}", e.getMessage());
+            return userMessage;
+        }
+    }
+
     /**
      * 通用流式代码处理方法（使用 appId）
      * 拼接流式返回结果并解析保存代码（使用 appId）
