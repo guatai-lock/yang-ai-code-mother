@@ -1,5 +1,4 @@
 package com.guatai.yangaicodemother.service.impl;
-
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.io.FileUtil;
@@ -46,11 +45,8 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
-
 import java.io.File;
-import java.io.FileFilter;
 import java.io.Serializable;
-import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -58,7 +54,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
-
 /**
  * 应用 服务层实现。
  *
@@ -423,7 +418,7 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
      */
     @Override
     public void generateAppScreenshotAsync(Long appId, String appUrl) {
-        Thread.startVirtualThread(() -> {
+        Thread.startVirtualThread(()  ->{
             try {
                 String screenshotUrl = screenshotService.generateAndUploadScreenshot(appUrl);
                 if (StrUtil.isBlank(screenshotUrl)) {
@@ -440,7 +435,6 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
             }
         });
     }
-
     /**
      * 使用 AI 根据 initPrompt 生成应用名称
      *

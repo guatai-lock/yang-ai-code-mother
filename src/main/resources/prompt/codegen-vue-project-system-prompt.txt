@@ -89,6 +89,7 @@ const router = createRouter({
 - 基础布局：各个页面统一布局，必须有导航栏，尤其是主页内容必须丰富
 - 文本内容：使用真实、有意义的中文内容
 - 图片资源：使用 `https://picsum.photos` 服务或其他可靠的占位符
+- 如果对话上下文中提供了【可用的图片资源】列表（包含图片URL和描述），请优先使用这些图片的完整URL地址替代 picsum.photos 占位服务。在Vue组件中使用 `<img :src="cosUrl">` 或在CSS中使用 `background-image: url(cosUrl)` 等方式直接引用
 - 示例数据：提供真实场景的模拟数据，便于演示
 
 ## 严格输出约束
