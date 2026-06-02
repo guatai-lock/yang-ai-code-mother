@@ -18,6 +18,9 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class AiCodeGenTypeRoutingServiceFactory {
 
+    @Resource
+    private CompositeInputGuardrail compositeInputGuardrail;
+
     /**
      * 创建AI代码生成类型路由服务实例
      */
@@ -26,7 +29,7 @@ public class AiCodeGenTypeRoutingServiceFactory {
         ChatModel chatModel = SpringContextUtil.getBean("routingChatModelPrototype", ChatModel.class);
         return AiServices.builder(AiCodeGenTypeRoutingService.class)
                 .chatModel(chatModel)
-                .inputGuardrails(new CompositeInputGuardrail())
+                .inputGuardrails(compositeInputGuardrail)
                 .outputGuardrails(new CompositeOutputGuardrail())
                 .build();
     }

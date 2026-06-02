@@ -1,0 +1,42 @@
+{
+  "sensitiveWords": [
+    "忽略之前的指令",
+    "ignore previous",
+    "ignore above",
+    "破解",
+    "hack",
+    "绕过",
+    "bypass",
+    "越狱",
+    "jailbreak",
+    "忘记之前",
+    "你现在是",
+    "假装你是",
+    "系统提示"
+  ],
+  "injectionPatterns": [
+    "(?i)ignore\\s+(?:previous|above|all)\\s+(?:instructions?|commands?|prompts?)",
+    "(?i)(?:forget|disregard)\\s+(?:everything|all)\\s+(?:above|before)",
+    "(?i)(?:pretend|act|behave)\\s+(?:as|like)\\s+(?:if|you\\s+are)",
+    "(?i)system\\s*:\\s*you\\s+are",
+    "(?i)new\\s+(?:instructions?|commands?|prompts?)\\s*:"
+  ],
+  "hallucinationTriggers": [
+    "随便写",
+    "编一个",
+    "虚构",
+    "假代码",
+    "示例就行",
+    "不用真实",
+    "随便生成",
+    "不用可用",
+    "伪代码",
+    "随便写写",
+    "不用运行",
+    "不用实现",
+    "大概写"
+  ],
+  "hallucinationPattern": "(?i)(随便|编造|虚构|假的|示例|不用运行|不用真实)",
+  "maxInputLength": 1000,
+  "enabled": true
+}

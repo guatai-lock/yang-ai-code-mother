@@ -143,6 +143,12 @@
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
+        <!-- Nacos 配置中心客户端 -->
+        <dependency>
+            <groupId>com.alibaba.nacos</groupId>
+            <artifactId>nacos-client</artifactId>
+            <version>2.5.1</version>
+        </dependency>
     </dependencies>
     <build>
         <plugins>

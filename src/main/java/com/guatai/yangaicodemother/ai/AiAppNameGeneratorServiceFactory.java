@@ -5,6 +5,7 @@ import com.guatai.yangaicodemother.ai.guardrail.CompositeOutputGuardrail;
 import com.guatai.yangaicodemother.utils.SpringContextUtil;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.service.AiServices;
+import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -17,6 +18,9 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class AiAppNameGeneratorServiceFactory {
 
+    @Resource
+    private CompositeInputGuardrail compositeInputGuardrail;
+
     /**
      * 创建 AI 应用名称生成服务实例
      * 使用多例模式的 ChatModel，支持并发调用
@@ -26,7 +30,7 @@ public class AiAppNameGeneratorServiceFactory {
         ChatModel chatModel = SpringContextUtil.getBean("appNameChatModelPrototype", ChatModel.class);
         return AiServices.builder(AiAppNameGeneratorService.class)
                 .chatModel(chatModel)
-                .inputGuardrails(new CompositeInputGuardrail())
+                .inputGuardrails(compositeInputGuardrail)
                 .outputGuardrails(new CompositeOutputGuardrail())
                 .build();
     }

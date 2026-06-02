@@ -47,6 +47,9 @@ public class AiCodeGeneratorServiceFactory {
         @Resource
         private ToolManager toolManager;
 
+        @Resource
+        private CompositeInputGuardrail compositeInputGuardrail;
+
 
     /**
      * 创建新的 AI 服务实例
@@ -76,7 +79,7 @@ public class AiCodeGeneratorServiceFactory {
                         .hallucinatedToolNameStrategy(toolExecutionRequest -> ToolExecutionResultMessage.from(
                                 toolExecutionRequest, "Error: there is no tool called " + toolExecutionRequest.name()
                         ))
-                        .inputGuardrails(new CompositeInputGuardrail())
+                        .inputGuardrails(compositeInputGuardrail)
                         .maxSequentialToolsInvocations(20)
                         .build();
             }
@@ -87,7 +90,7 @@ public class AiCodeGeneratorServiceFactory {
                         .chatModel(chatModel)
                         .streamingChatModel(openAiStreamingChatModel)
                         .chatMemory(chatMemory)
-                        .inputGuardrails(new CompositeInputGuardrail())
+                        .inputGuardrails(compositeInputGuardrail)
                         .build();
             }
             default -> throw new BusinessException(ErrorCode.SYSTEM_ERROR,
