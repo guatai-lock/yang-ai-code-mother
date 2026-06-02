@@ -5,7 +5,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Nacos 配置中心连接属性
@@ -74,5 +76,35 @@ public class NacosConfigProperties {
 
         /** 代码生成幻觉模式（正则表达式） */
         private String hallucinationPattern = "(?i)(随便|编造|虚构|假的|示例|不用运行|不用真实)";
+
+        /** 提示词重写功能开关（默认关闭，需在 Nacos 中显式开启） */
+        private boolean rewritingEnabled = false;
+
+        /** 敏感词→安全替代词映射 */
+        private Map<String, String> sensitiveWordReplacements = new HashMap<>(Map.of(
+                "破解", "开发",
+                "hack", "build",
+                "绕过", "通过",
+                "bypass", "access via",
+                "越狱", "突破限制",
+                "jailbreak", "unlock"
+        ));
+
+        /** 幻觉触发词→专业替代词映射 */
+        private Map<String, String> hallucinationTriggerReplacements = new HashMap<>(Map.ofEntries(
+                Map.entry("随便写", "请生成"),
+                Map.entry("编一个", "请编写"),
+                Map.entry("虚构", "请设计"),
+                Map.entry("假代码", "示例代码"),
+                Map.entry("示例就行", "请提供完整示例"),
+                Map.entry("不用真实", "请使用示例数据"),
+                Map.entry("随便生成", "请生成"),
+                Map.entry("不用可用", "请确保可用"),
+                Map.entry("伪代码", "实际代码"),
+                Map.entry("随便写写", "请认真编写"),
+                Map.entry("不用运行", "请确保可运行"),
+                Map.entry("不用实现", "请完整实现"),
+                Map.entry("大概写", "请准确实现")
+        ));
     }
 }

@@ -38,5 +38,31 @@
   ],
   "hallucinationPattern": "(?i)(随便|编造|虚构|假的|示例|不用运行|不用真实)",
   "maxInputLength": 1000,
-  "enabled": true
+  "enabled": true,
+  "rewriteRules": {
+    "enabled": true,
+    "sensitiveWordReplacements": {
+      "破解": "开发",
+      "hack": "build",
+      "绕过": "通过",
+      "bypass": "access via",
+      "越狱": "突破限制",
+      "jailbreak": "unlock"
+    },
+    "hallucinationTriggerReplacements": {
+      "随便写": "请生成",
+      "编一个": "请编写",
+      "虚构": "请设计",
+      "假代码": "示例代码",
+      "示例就行": "请提供完整示例",
+      "不用真实": "请使用示例数据",
+      "随便生成": "请生成",
+      "不用可用": "请确保可用",
+      "伪代码": "实际代码",
+      "随便写写": "请认真编写",
+      "不用运行": "请确保可运行",
+      "不用实现": "请完整实现",
+      "大概写": "请准确实现"
+    }
+  }
 }

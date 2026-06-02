@@ -8,6 +8,7 @@ import com.guatai.yangaicodemother.ai.AiAppNameGeneratorService;
 import com.guatai.yangaicodemother.ai.AiAppNameGeneratorServiceFactory;
 import com.guatai.yangaicodemother.ai.AiCodeGenTypeRoutingService;
 import com.guatai.yangaicodemother.ai.AiCodeGenTypeRoutingServiceFactory;
+import com.guatai.yangaicodemother.ai.guardrail.PromptRewriteService;
 import com.guatai.yangaicodemother.common.AppConstant;
 import com.guatai.yangaicodemother.core.AiCodeGeneratorFacade;
 import com.guatai.yangaicodemother.core.builder.VueProjectBuilder;
@@ -94,6 +95,9 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
 
     @Resource
     private CacheManager cacheManager;
+
+    @Resource
+    private PromptRewriteService promptRewriteService;
     @Override
     public Long createApp(AppAddRequest appAddRequest, User loginUser) {
         // 参数校验
@@ -106,9 +110,11 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
         // 使用 AI 智能生成应用名称
         String appName = generateAppNameByAI(initPrompt);
         app.setAppName(appName);
+        // 互轨机制：重写路由提示词（移除风险内容后再进行 AI 路由判断）
+        String safeInitPrompt = promptRewriteService.rewrite(initPrompt);
         // 使用 AI 智能选择代码生成类型(多例模式)
         AiCodeGenTypeRoutingService routingService = aiCodeGenTypeRoutingServiceFactory.createAiCodeGenTypeRoutingService();
-        CodeGenTypeEnum selectedCodeGenType = routingService.routeCodeGenType(initPrompt);
+        CodeGenTypeEnum selectedCodeGenType = routingService.routeCodeGenType(safeInitPrompt);
         app.setCodeGenType(selectedCodeGenType.getValue());
         // 插入数据库
         boolean result = this.save(app);
@@ -206,15 +212,18 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
         roundUpdate.setId(appId);
         roundUpdate.setConversationRound(app.getConversationRound() == null ? 1 : app.getConversationRound() + 1);
         this.updateById(roundUpdate);
-        //6设置监控上下文
+        // 6. 设置监控上下文
         MonitorContextHolder.setContext(
                 MonitorContext.builder()
                         .appId(appId.toString())
                         .userId(loginUser.getId().toString())
                         .build()
         );
-    // 7. 调用 AI 生成代码（流式）
-        Flux<String> codeStream = aiCodeGeneratorFacade.generateAndSaveCodeStream(message, codeGenTypeEnum, appId);
+        // 7. 互轨机制：提示词重写（外轨 — 主动修复）
+        // 将原始消息保存到对话历史后，使用重写后的安全版本调用 AI
+        String safeMessage = promptRewriteService.rewrite(message);
+        // 8. 调用 AI 生成代码（流式）
+        Flux<String> codeStream = aiCodeGeneratorFacade.generateAndSaveCodeStream(safeMessage, codeGenTypeEnum, appId);
     // 8. 收集 AI 响应内容并在完成后记录到对话历史
         return streamHandlerExecutor.doExecute(codeStream, chatHistoryService,
                 appId, loginUser, codeGenTypeEnum)

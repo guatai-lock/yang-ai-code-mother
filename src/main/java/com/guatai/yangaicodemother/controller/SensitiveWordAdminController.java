@@ -49,6 +49,9 @@ public class SensitiveWordAdminController {
         status.put("hasHallucinationPattern", rules.getHallucinationPattern() != null);
         status.put("maxInputLength", rules.getMaxInputLength());
         status.put("nacosConnected", nacosConfigManager.isNacosAvailable());
+        status.put("rewritingEnabled", rules.isRewritingEnabled());
+        status.put("sensitiveWordReplacementCount", rules.getSensitiveWordReplacements().size());
+        status.put("hallucinationTriggerReplacementCount", rules.getHallucinationTriggerReplacements().size());
         return ResultUtils.success(status);
     }
 

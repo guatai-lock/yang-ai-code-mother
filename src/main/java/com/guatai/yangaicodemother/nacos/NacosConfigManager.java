@@ -135,7 +135,10 @@ public class NacosConfigManager {
                 fb.getHallucinationTriggers(),
                 fb.getHallucinationPattern(),
                 fb.getMaxInputLength(),
-                fb.isEnabled()
+                fb.isEnabled(),
+                fb.getSensitiveWordReplacements(),
+                fb.getHallucinationTriggerReplacements(),
+                fb.isRewritingEnabled()
         );
         sensitiveWordRules.update(rules);
     }

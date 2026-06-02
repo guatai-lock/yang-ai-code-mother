@@ -6,6 +6,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Pattern;
 
@@ -36,10 +37,11 @@ public class SensitiveWordRules {
         }
         ImmutableRuleSet old = ruleSetRef.get();
         ruleSetRef.set(newRules);
-        log.info("敏感词规则已更新: {} 个敏感词, {} 个注入模式, {} 个幻觉触发词, 启用={}",
+        log.info("敏感词规则已更新: {} 个敏感词, {} 个注入模式, {} 个幻觉触发词, 重写规则: {} 个替换, 启用={}",
                 newRules.getSensitiveWords().size(),
                 newRules.getInjectionPatterns().size(),
                 newRules.getHallucinationTriggers().size(),
+                newRules.getSensitiveWordReplacements().size(),
                 newRules.isEnabled());
     }
 
@@ -67,7 +69,10 @@ public class SensitiveWordRules {
                 Collections.emptyList(),
                 null,
                 1000,
-                true
+                true,
+                Collections.emptyMap(),
+                Collections.emptyMap(),
+                false
         );
 
         private final List<String> sensitiveWords;
@@ -76,6 +81,12 @@ public class SensitiveWordRules {
         private final Pattern hallucinationPattern;
         private final int maxInputLength;
         private final boolean enabled;
+        /** 敏感词→安全替代词映射（用于提示词重写） */
+        private final Map<String, String> sensitiveWordReplacements;
+        /** 幻觉触发词→专业替代词映射（用于提示词重写） */
+        private final Map<String, String> hallucinationTriggerReplacements;
+        /** 提示词重写功能主开关 */
+        private final boolean rewritingEnabled;
 
         public ImmutableRuleSet(
                 List<String> sensitiveWords,
@@ -83,13 +94,27 @@ public class SensitiveWordRules {
                 List<String> hallucinationTriggers,
                 Pattern hallucinationPattern,
                 int maxInputLength,
-                boolean enabled) {
+                boolean enabled,
+                Map<String, String> sensitiveWordReplacements,
+                Map<String, String> hallucinationTriggerReplacements,
+                boolean rewritingEnabled) {
             this.sensitiveWords = List.copyOf(sensitiveWords);
             this.injectionPatterns = List.copyOf(injectionPatterns);
             this.hallucinationTriggers = List.copyOf(hallucinationTriggers);
             this.hallucinationPattern = hallucinationPattern;
             this.maxInputLength = maxInputLength;
             this.enabled = enabled;
+            this.sensitiveWordReplacements = Map.copyOf(sensitiveWordReplacements);
+            this.hallucinationTriggerReplacements = Map.copyOf(hallucinationTriggerReplacements);
+            this.rewritingEnabled = rewritingEnabled;
+        }
+
+        /**
+         * 是否有需要重写的内容（快速检查，避免不必要的字符串操作）
+         */
+        public boolean hasRewriteRules() {
+            return rewritingEnabled
+                    && (!sensitiveWordReplacements.isEmpty() || !hallucinationTriggerReplacements.isEmpty());
         }
     }
 }
