@@ -42,17 +42,21 @@ public class AiModelMetricsCollector {
     }
 
     /**
-     * 记录错误
+     * 记录错误（注意：error_message 标签在 Prometheus 中高基数，仅适用于开发/预发环境）
      */
     public void recordError(String userId, String appId, String modelName, String errorMessage) {
-        String key = String.format("%s_%s_%s_%s", userId, appId, modelName, errorMessage);
+        // 使用 errorMessage 的简短摘要作为标签，避免完整错误消息导致标签值爆炸
+        String errorSummary = errorMessage != null && errorMessage.length() > 50
+                ? errorMessage.substring(0, 50) + "..."
+                : errorMessage;
+        String key = String.format("%s_%s_%s_%s", userId, appId, modelName, errorSummary);
         Counter counter = errorCountersCache.computeIfAbsent(key, k ->
                 Counter.builder("ai_model_errors_total")
                         .description("AI模型错误次数")
                         .tag("user_id", userId)
                         .tag("app_id", appId)
                         .tag("model_name", modelName)
-                        .tag("error_message", errorMessage)
+                        .tag("error_message", errorSummary)
                         .register(meterRegistry)
         );
         counter.increment();

@@ -212,13 +212,14 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
         roundUpdate.setId(appId);
         roundUpdate.setConversationRound(app.getConversationRound() == null ? 1 : app.getConversationRound() + 1);
         this.updateById(roundUpdate);
-        // 6. 设置监控上下文
-        MonitorContextHolder.setContext(
-                MonitorContext.builder()
-                        .appId(appId.toString())
-                        .userId(loginUser.getId().toString())
-                        .build()
-        );
+        // 6. 构建并设置监控上下文
+        //    inline 设置：覆盖 Hot Flux（HTML/MULTI_FILE），listener.onRequest 在代理调用时同步触发（请求线程）
+        //    doOnSubscribe 设置（备份）：覆盖 Lazy Flux（VUE_PROJECT），listener.onRequest 在订阅时触发
+        MonitorContext monitorContext = MonitorContext.builder()
+                .appId(appId.toString())
+                .userId(loginUser.getId().toString())
+                .build();
+        MonitorContextHolder.setContext(monitorContext);
         // 7. 互轨机制：提示词重写（外轨 — 主动修复）
         // 将原始消息保存到对话历史后，使用重写后的安全版本调用 AI
         String safeMessage = promptRewriteService.rewrite(message);
@@ -227,6 +228,10 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
     // 8. 收集 AI 响应内容并在完成后记录到对话历史
         return streamHandlerExecutor.doExecute(codeStream, chatHistoryService,
                 appId, loginUser, codeGenTypeEnum)
+                .doOnSubscribe(s ->
+                        // 在订阅线程上设置监控上下文（覆盖 Lazy Flux 路径：VUE_PROJECT）
+                        MonitorContextHolder.setContext(monitorContext)
+                )
                 .doFinally(
                         // 清理监控上下文(无论成功/失败/取消)
                         signalType -> MonitorContextHolder.clearContext()
