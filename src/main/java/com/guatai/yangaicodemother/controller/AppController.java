@@ -195,6 +195,8 @@ public class AppController {
      * @return 应用 id
      */
     @PostMapping("/add")
+    @RateLimit(limitType = RateLimitType.USER, rate = 1, rateInterval = 3,
+               message = "创建应用过于频繁，请稍后再试")
     public BaseResponse<Long> addApp(@RequestBody AppAddRequest appAddRequest, HttpServletRequest request) {
         ThrowUtils.throwIf(appAddRequest == null, ErrorCode.PARAMS_ERROR);
         // 参数校验
