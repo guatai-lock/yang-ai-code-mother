@@ -14,21 +14,7 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 @Component
 public class VueProjectBuilder {
-        /**
-         * 异步构建项目（不阻塞主流程）
-         *
-         * @param projectPath 项目路径
-         */
-        public void buildProjectAsync(String projectPath) {
-            // 在单独的线程中执行构建，避免阻塞主流程
-            Thread.ofVirtual().name("vue-builder-" + System.currentTimeMillis()).start(() -> {
-                try {
-                    buildProject(projectPath);
-                } catch (Exception e) {
-                    log.error("异步构建 Vue 项目时发生异常: {}", e.getMessage(), e);
-                }
-            });
-        }
+
     /**
      * 构建 Vue 项目
      *

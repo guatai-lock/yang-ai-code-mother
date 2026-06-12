@@ -26,6 +26,7 @@ import com.guatai.yangaicodemother.model.enums.DeployStatusEnum;
 import com.guatai.yangaicodemother.model.vo.AppVO;
 import com.guatai.yangaicodemother.model.vo.DeployStatusVO;
 import com.guatai.yangaicodemother.model.vo.UserVO;
+import com.guatai.yangaicodemother.monitor.AiModelMetricsCollector;
 import com.guatai.yangaicodemother.monitor.MonitorContext;
 import com.guatai.yangaicodemother.monitor.MonitorContextHolder;
 import com.guatai.yangaicodemother.service.ChatHistoryService;
@@ -38,6 +39,7 @@ import com.guatai.yangaicodemother.mapper.AppMapper;
 import com.guatai.yangaicodemother.service.AppService;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.cache.Cache;
@@ -53,6 +55,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 /**
@@ -98,6 +102,14 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
 
     @Resource
     private PromptRewriteService promptRewriteService;
+
+    @Resource
+    private AiModelMetricsCollector metricsCollector;
+
+    @Resource
+    @Qualifier("virtualThreadExecutor")
+    private ExecutorService virtualThreadExecutor;
+
     @Override
     public Long createApp(AppAddRequest appAddRequest, User loginUser) {
         // 参数校验
@@ -427,27 +439,39 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
     /**
      * 异步生成应用截图并更新封面
      *
+     * <p>使用虚拟线程执行器执行截图任务，不阻塞调用方。
+     * 通过 {@link CompletableFuture} 支持调用方追踪执行状态。
+     * 截图成功/失败通过 {@link AiModelMetricsCollector#recordAsyncTask} 上报 Prometheus 指标。</p>
+     *
      * @param appId  应用ID
      * @param appUrl 应用访问URL
+     * @return 异步任务句柄，可用于追踪截图是否完成
      */
     @Override
-    public void generateAppScreenshotAsync(Long appId, String appUrl) {
-        Thread.startVirtualThread(()  ->{
+    public CompletableFuture<Void> generateAppScreenshotAsync(Long appId, String appUrl) {
+        return CompletableFuture.runAsync(() -> {
             try {
                 String screenshotUrl = screenshotService.generateAndUploadScreenshot(appUrl);
                 if (StrUtil.isBlank(screenshotUrl)) {
                     log.warn("应用 {} 截图生成结果为空，跳过封面更新", appId);
+                    metricsCollector.recordAsyncTask("screenshot", "empty");
                     return;
                 }
                 App updateApp = new App();
                 updateApp.setId(appId);
                 updateApp.setCover(screenshotUrl);
                 boolean updated = this.updateById(updateApp);
-                ThrowUtils.throwIf(!updated, ErrorCode.OPERATION_ERROR, "更新应用封面字段失败");
+                if (!updated) {
+                    log.error("更新应用 {} 封面字段失败", appId);
+                    metricsCollector.recordAsyncTask("screenshot", "db_update_failed");
+                } else {
+                    metricsCollector.recordAsyncTask("screenshot", "success");
+                }
             } catch (Exception e) {
-                log.error("应用 {} 截图生成失败: {}", appId, e.getMessage());
+                log.error("应用 {} 截图生成失败: {}", appId, e.getMessage(), e);
+                metricsCollector.recordAsyncTask("screenshot", "failed");
             }
-        });
+        }, virtualThreadExecutor);
     }
     /**
      * 使用 AI 根据 initPrompt 生成应用名称

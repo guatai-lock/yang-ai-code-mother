@@ -11,6 +11,7 @@ import com.guatai.yangaicodemother.model.entity.App;
 import reactor.core.publisher.Flux;
 
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * 应用 服务层。
@@ -68,12 +69,16 @@ public interface AppService extends IService<App> {
      */
     String deployApp(Long appId, User loginUser);
     /**
-     * 生成应用截图
+     * 异步生成应用截图并更新封面
      *
-     * @param appId 应用id
+     * <p>使用虚拟线程执行器执行截图任务，不阻塞调用方。
+     * 返回的 {@link CompletableFuture} 可用于追踪任务执行状态。</p>
+     *
+     * @param appId  应用id
      * @param appUrl 应用url
+     * @return 异步任务句柄，可用于追踪截图是否完成
      */
-    void generateAppScreenshotAsync(Long appId, String appUrl);
+    CompletableFuture<Void> generateAppScreenshotAsync(Long appId, String appUrl);
 
     /**
      * 应用下线（取消部署）

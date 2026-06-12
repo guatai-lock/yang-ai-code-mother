@@ -23,6 +23,7 @@ public class AiModelMetricsCollector {
     private final ConcurrentMap<String, Counter> errorCountersCache = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, Counter> tokenCountersCache = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, Timer> responseTimersCache = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, Counter> asyncTaskCountersCache = new ConcurrentHashMap<>();
 
     /**
      * 记录请求次数
@@ -94,5 +95,26 @@ public class AiModelMetricsCollector {
                         .register(meterRegistry)
         );
         timer.record(duration);
+    }
+
+    /**
+     * 记录异步任务执行结果
+     *
+     * <p>用于追踪虚拟线程执行的后台任务（如截图生成、Vue 构建等）的
+     * 成功/失败计数，通过 Prometheus 指标 {@code ai_async_tasks_total} 暴露。</p>
+     *
+     * @param taskType 任务类型，如 "screenshot"、"vue_build"
+     * @param result   执行结果，如 "success"、"failed"、"empty"、"db_update_failed"
+     */
+    public void recordAsyncTask(String taskType, String result) {
+        String key = taskType + ":" + result;
+        Counter counter = asyncTaskCountersCache.computeIfAbsent(key, k ->
+                Counter.builder("ai_async_tasks_total")
+                        .description("异步任务执行结果计数")
+                        .tag("task_type", taskType)
+                        .tag("result", result)
+                        .register(meterRegistry)
+        );
+        counter.increment();
     }
 }

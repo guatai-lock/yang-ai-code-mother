@@ -1,6 +1,5 @@
 package com.guatai.yangaicodemother.config;
 
-import jakarta.annotation.Resource;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
@@ -36,12 +35,9 @@ public class WebAsyncConfig implements WebMvcConfigurer {
         return executor;
     }
 
-    @Resource(name = "sseTaskExecutor")
-    private ThreadPoolTaskExecutor sseTaskExecutor;
-
     @Override
     public void configureAsyncSupport(AsyncSupportConfigurer configurer) {
-        configurer.setTaskExecutor(sseTaskExecutor);
+        configurer.setTaskExecutor(sseTaskExecutor());
         configurer.setDefaultTimeout(300000L); // 5 分钟超时
     }
 }
