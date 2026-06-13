@@ -151,6 +151,12 @@
             <artifactId>nacos-client</artifactId>
             <version>2.5.1</version>
         </dependency>
+        <!-- RAG: ONNX 本地嵌入模型（BGE Small ZH v1.5，512维，零费用） -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-embeddings-bge-small-zh-v15</artifactId>
+            <version>1.1.0-beta7</version>
+        </dependency>
     </dependencies>
     <build>
         <plugins>

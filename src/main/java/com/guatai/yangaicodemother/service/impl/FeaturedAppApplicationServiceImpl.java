@@ -3,6 +3,8 @@ package com.guatai.yangaicodemother.service.impl;
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.StrUtil;
 import com.guatai.yangaicodemother.common.AppConstant;
+import com.guatai.yangaicodemother.event.AppFeaturedEvent;
+import com.guatai.yangaicodemother.event.AppUnfeaturedEvent;
 import com.guatai.yangaicodemother.exception.BusinessException;
 import com.guatai.yangaicodemother.exception.ErrorCode;
 import com.guatai.yangaicodemother.exception.ThrowUtils;
@@ -63,6 +65,9 @@ public class FeaturedAppApplicationServiceImpl
 
     @Resource
     private CacheManager cacheManager;
+
+    @Resource
+    private org.springframework.context.ApplicationContext applicationContext;
 
     @PostConstruct
     public void init() {
@@ -218,12 +223,16 @@ public class FeaturedAppApplicationServiceImpl
             return null;
         });
 
-        // 4. 如果通过审核，在事务外批量更新应用优先级 + 驱逐缓存
+        // 4. 如果通过审核，在事务外批量更新应用优先级 + 驱逐缓存 + 发布精选事件
         if (approved && CollUtil.isNotEmpty(approvedAppIds)) {
             batchUpdateAppPriority(approvedAppIds);
             // 驱逐精选应用缓存，确保新通过的应用立即出现在精选列表
             evictGoodAppPageCache();
-            log.info("批量审核通过 {} 个应用，已主动刷新缓存", approvedAppIds.size());
+            // 发布精选事件（RAG 语料库监听并增量加载）
+            for (Long appId : approvedAppIds) {
+                applicationContext.publishEvent(new AppFeaturedEvent(this, appId));
+            }
+            log.info("批量审核通过 {} 个应用，已主动刷新缓存并发布精选事件", approvedAppIds.size());
         }
 
         log.info("批量审核完成，总数: {}, 成功: {}, 审核结果: {}, 审核人: {}",
@@ -286,7 +295,12 @@ public class FeaturedAppApplicationServiceImpl
         // 5. 驱逐缓存
         evictGoodAppPageCache();
 
-        log.info("管理员 {} 已批量取消 {} 个应用的精选状态", adminUser.getId(), actionableAppIds.size());
+        // 6. 发布取消精选事件（RAG 语料库监听并移除 embedding）
+        for (Long appId : actionableAppIds) {
+            applicationContext.publishEvent(new AppUnfeaturedEvent(this, appId));
+        }
+
+        log.info("管理员 {} 已批量取消 {} 个应用的精选状态，并发布取消精选事件", adminUser.getId(), actionableAppIds.size());
     }
 
     @Override

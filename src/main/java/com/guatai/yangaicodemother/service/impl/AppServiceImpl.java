@@ -13,6 +13,7 @@ import com.guatai.yangaicodemother.common.AppConstant;
 import com.guatai.yangaicodemother.core.AiCodeGeneratorFacade;
 import com.guatai.yangaicodemother.core.builder.VueProjectBuilder;
 import com.guatai.yangaicodemother.core.handler.StreamHandlerExecutor;
+import com.guatai.yangaicodemother.event.AppDeployedEvent;
 import com.guatai.yangaicodemother.exception.BusinessException;
 import com.guatai.yangaicodemother.exception.ErrorCode;
 import com.guatai.yangaicodemother.exception.ThrowUtils;
@@ -29,6 +30,7 @@ import com.guatai.yangaicodemother.model.vo.UserVO;
 import com.guatai.yangaicodemother.monitor.AiModelMetricsCollector;
 import com.guatai.yangaicodemother.monitor.MonitorContext;
 import com.guatai.yangaicodemother.monitor.MonitorContextHolder;
+import com.guatai.yangaicodemother.rag.RagSwitchHolder;
 import com.guatai.yangaicodemother.service.ChatHistoryService;
 import com.guatai.yangaicodemother.service.ScreenshotService;
 import com.guatai.yangaicodemother.service.UserService;
@@ -198,7 +200,7 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
                 .orderBy(sortField, "ascend".equals(sortOrder));
     }
     @Override
-    public Flux<String> chatToGenCode(Long appId, String message, User loginUser) {
+    public Flux<String> chatToGenCode(Long appId, String message, User loginUser, Boolean ragEnabled) {
         // 1. 参数校验
         ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "应用 ID 不能为空");
         ThrowUtils.throwIf(StrUtil.isBlank(message), ErrorCode.PARAMS_ERROR, "用户消息不能为空");
@@ -215,16 +217,19 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
         if (codeGenTypeEnum == null) {
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "不支持的代码生成类型");
         }
-        // 5. 通过校验后，添加用户消息到对话历(保存到数据库)
+        // 5. 设置 RAG 开关（默认关闭，仅当 ragEnabled=true 时启用）
+        boolean ragActive = Boolean.TRUE.equals(ragEnabled);
+        RagSwitchHolder.setEnabled(ragActive);
+        // 6. 通过校验后，添加用户消息到对话历(保存到数据库)
         chatHistoryService.addChatMessage(appId, message,
                 ChatHistoryMessageTypeEnum.USER.getValue(),
                 loginUser.getId());
-        // 5.5 递增应用对话轮次
+        // 6.5 递增应用对话轮次
         App roundUpdate = new App();
         roundUpdate.setId(appId);
         roundUpdate.setConversationRound(app.getConversationRound() == null ? 1 : app.getConversationRound() + 1);
         this.updateById(roundUpdate);
-        // 6. 构建并设置监控上下文
+        // 7. 构建并设置监控上下文
         //    inline 设置：覆盖 Hot Flux（HTML/MULTI_FILE），listener.onRequest 在代理调用时同步触发（请求线程）
         //    doOnSubscribe 设置（备份）：覆盖 Lazy Flux（VUE_PROJECT），listener.onRequest 在订阅时触发
         MonitorContext monitorContext = MonitorContext.builder()
@@ -232,12 +237,12 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
                 .userId(loginUser.getId().toString())
                 .build();
         MonitorContextHolder.setContext(monitorContext);
-        // 7. 互轨机制：提示词重写（外轨 — 主动修复）
+        // 8. 互轨机制：提示词重写（外轨 — 主动修复）
         // 将原始消息保存到对话历史后，使用重写后的安全版本调用 AI
         String safeMessage = promptRewriteService.rewrite(message);
-        // 8. 调用 AI 生成代码（流式）
+        // 9. 调用 AI 生成代码（流式）
         Flux<String> codeStream = aiCodeGeneratorFacade.generateAndSaveCodeStream(safeMessage, codeGenTypeEnum, appId);
-    // 8. 收集 AI 响应内容并在完成后记录到对话历史
+    // 10. 收集 AI 响应内容并在完成后记录到对话历史
         return streamHandlerExecutor.doExecute(codeStream, chatHistoryService,
                 appId, loginUser, codeGenTypeEnum)
                 .doOnSubscribe(s ->
@@ -245,8 +250,12 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
                         MonitorContextHolder.setContext(monitorContext)
                 )
                 .doFinally(
-                        // 清理监控上下文(无论成功/失败/取消)
-                        signalType -> MonitorContextHolder.clearContext()
+                        signalType -> {
+                            // 清理监控上下文(无论成功/失败/取消)
+                            MonitorContextHolder.clearContext();
+                            // 清理 RAG 开关状态
+                            RagSwitchHolder.clear();
+                        }
                 )
                 ;
     }
@@ -324,7 +333,11 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
             boolean updateResult = this.updateById(updateApp);
             ThrowUtils.throwIf(!updateResult, ErrorCode.OPERATION_ERROR, "更新应用部署信息失败");
 
-            // 11. 返回可访问的 URL
+            // 11. 发布部署事件（RAG 语料库监听此事件更新精选应用的 embedding）
+            applicationContext.publishEvent(new AppDeployedEvent(this, appId, deployKey, codeGenType));
+            log.debug("已发布部署事件: appId={}, deployKey={}", appId, deployKey);
+
+            // 12. 返回可访问的 URL
             String appDeployUrl = String.format("%s/%s/", AppConstant.CODE_DEPLOY_HOST, deployKey);
             generateAppScreenshotAsync(appId, appDeployUrl);
             return appDeployUrl;
