@@ -32,6 +32,7 @@ import com.guatai.yangaicodemother.monitor.MonitorContext;
 import com.guatai.yangaicodemother.monitor.MonitorContextHolder;
 import com.guatai.yangaicodemother.rag.RagSwitchHolder;
 import com.guatai.yangaicodemother.service.ChatHistoryService;
+import com.guatai.yangaicodemother.service.FeaturedAppApplicationService;
 import com.guatai.yangaicodemother.service.ScreenshotService;
 import com.guatai.yangaicodemother.service.UserService;
 import com.mybatisflex.core.query.QueryWrapper;
@@ -50,6 +51,7 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.SignalType;
 import java.io.File;
 import java.io.Serializable;
 import java.time.LocalDateTime;
@@ -104,6 +106,10 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
 
     @Resource
     private PromptRewriteService promptRewriteService;
+
+    @Resource
+    @Lazy
+    private FeaturedAppApplicationService featuredAppApplicationService;
 
     @Resource
     private AiModelMetricsCollector metricsCollector;
@@ -207,6 +213,9 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
         // 2. 查询应用信息
         App app = this.getById(appId);
         ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR, "应用不存在");
+        // 2.5 捕获当前应用状态，用于 doFinally 中判断是否触发内容审核
+        Integer currentPriority = app.getPriority();
+        String currentDeployStatus = app.getDeployStatus();
         // 3. 验证用户是否有权限访问该应用，仅本人可以生成代码
         if (!app.getUserId().equals(loginUser.getId())) {
             throw new BusinessException(ErrorCode.NO_AUTH_ERROR, "无权限访问该应用");
@@ -255,6 +264,24 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
                             MonitorContextHolder.clearContext();
                             // 清理 RAG 开关状态
                             RagSwitchHolder.clear();
+
+                            // 精选已部署应用 → 代码生成成功后提交内容重新审核，旧版本继续在线
+                            // 仅在 ON_COMPLETE 时触发（ON_ERROR / ON_CANCEL 不创建虚假的审核申请）
+                            if (signalType == SignalType.ON_COMPLETE
+                                    && AppConstant.GOOD_APP_PRIORITY.equals(currentPriority)
+                                    && DeployStatusEnum.ONLINE.getValue().equals(currentDeployStatus)) {
+                                log.info("精选应用代码生成完成，异步提交内容重新审核: appId={}", appId);
+                                CompletableFuture.runAsync(() -> {
+                                    try {
+                                        featuredAppApplicationService.requestContentReview(appId, loginUser);
+                                    } catch (BusinessException e) {
+                                        // 已有待审核申请等预期内的异常，只记日志
+                                        log.info("精选应用提交内容审核跳过: appId={}, reason={}", appId, e.getMessage());
+                                    } catch (Exception e) {
+                                        log.error("精选应用提交内容审核失败: appId={}", appId, e);
+                                    }
+                                }, virtualThreadExecutor);
+                            }
                         }
                 )
                 ;
@@ -282,65 +309,16 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
                 throw new BusinessException(ErrorCode.DEPLOY_STATUS_ERROR, "应用正在部署中，请稍后操作");
             }
 
-            // 5. 检查是否已有 deployKey
-            String deployKey = app.getDeployKey();
-            if (StrUtil.isBlank(deployKey)) {
-                deployKey = RandomUtil.randomString(6);
-            }
-
-            // 6. 获取代码生成类型，构建源目录路径
-            String codeGenType = app.getCodeGenType();
-            String sourceDirName = codeGenType + "_" + appId;
+            // 5. 检查源目录是否存在
+            String sourceDirName = app.getCodeGenType() + "_" + appId;
             String sourceDirPath = AppConstant.CODE_OUTPUT_ROOT_DIR + File.separator + sourceDirName;
-
-            // 7. 检查源目录是否存在
             File sourceDir = new File(sourceDirPath);
             if (!sourceDir.exists() || !sourceDir.isDirectory()) {
                 throw new BusinessException(ErrorCode.SYSTEM_ERROR, "应用代码不存在，请先生成代码");
             }
 
-            // 8. Vue 项目特殊处理：执行构建
-            CodeGenTypeEnum codeGenTypeEnum = CodeGenTypeEnum.getEnumByValue(codeGenType);
-            if (codeGenTypeEnum == CodeGenTypeEnum.VUE_PROJECT) {
-                boolean buildSuccess = vueProjectBuilder.buildProject(sourceDirPath);
-                ThrowUtils.throwIf(!buildSuccess, ErrorCode.SYSTEM_ERROR, "Vue 项目构建失败，请检查代码和依赖");
-
-                File distDir = new File(sourceDirPath, "dist");
-                ThrowUtils.throwIf(!distDir.exists(), ErrorCode.SYSTEM_ERROR, "Vue 项目构建完成但未生成 dist 目录");
-                sourceDir = distDir;
-                log.info("Vue 项目构建成功，将部署 dist 目录: {}", distDir.getAbsolutePath());
-            }
-
-            // 9. 复制文件到部署目录
-            String deployDirPath = AppConstant.CODE_DEPLOY_ROOT_DIR + File.separator + deployKey;
-            try {
-                FileUtil.copyContent(sourceDir, new File(deployDirPath), true);
-            } catch (Exception e) {
-                throw new BusinessException(ErrorCode.SYSTEM_ERROR, "部署失败：" + e.getMessage());
-            }
-
-            // 10. 更新应用的 deployKey 和部署时间
-            App updateApp = new App();
-            updateApp.setId(appId);
-            updateApp.setDeployKey(deployKey);
-            updateApp.setDeployedTime(LocalDateTime.now());
-            updateApp.setDeployStatus(DeployStatusEnum.ONLINE.getValue());
-
-            if (codeGenTypeEnum == CodeGenTypeEnum.VUE_PROJECT) {
-                updateApp.setLastBuildTime(LocalDateTime.now());
-            }
-
-            boolean updateResult = this.updateById(updateApp);
-            ThrowUtils.throwIf(!updateResult, ErrorCode.OPERATION_ERROR, "更新应用部署信息失败");
-
-            // 11. 发布部署事件（RAG 语料库监听此事件更新精选应用的 embedding）
-            applicationContext.publishEvent(new AppDeployedEvent(this, appId, deployKey, codeGenType));
-            log.debug("已发布部署事件: appId={}, deployKey={}", appId, deployKey);
-
-            // 12. 返回可访问的 URL
-            String appDeployUrl = String.format("%s/%s/", AppConstant.CODE_DEPLOY_HOST, deployKey);
-            generateAppScreenshotAsync(appId, appDeployUrl);
-            return appDeployUrl;
+            // 6. 执行部署核心逻辑
+            return executeDeploy(app, sourceDir);
 
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -350,6 +328,132 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
                 lock.unlock();
             }
         }
+    }
+
+    /**
+     * 内部部署：用户无感的精选应用自动部署/重新部署
+     * <p>
+     * 与 {@link #deployApp(Long, User)} 的区别：
+     * <ul>
+     *   <li>不校验用户权限（由调用方保证触发时机合法）</li>
+     *   <li>DEPLOYING 状态静默跳过而非抛出异常</li>
+     *   <li>代码目录不存在时静默跳过</li>
+     *   <li>所有异常内部消化，不传播到调用方</li>
+     * </ul>
+     *
+     * @param appId        应用 ID
+     * @param triggerSource 触发来源标识（用于日志追踪，如 "review-auto-deploy"、"content-review-approve"）
+     * @return 部署访问 URL，跳过部署时返回 null
+     */
+    @Override
+    public String internalDeployApp(Long appId, String triggerSource) {
+        ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "应用 ID 不能为空");
+
+        String lockKey = "app:deploy:lock:" + appId;
+        RLock lock = redissonClient.getLock(lockKey);
+
+        try {
+            if (!lock.tryLock(3, -1, TimeUnit.SECONDS)) {
+                log.warn("内部部署获取锁失败 (triggerSource={}): appId={}", triggerSource, appId);
+                return null;
+            }
+
+            App app = this.getById(appId);
+            if (app == null) {
+                log.warn("内部部署失败，应用不存在: appId={}", appId);
+                return null;
+            }
+
+            // 跳过 DEPLOYING 状态
+            if (DeployStatusEnum.DEPLOYING.getValue().equals(app.getDeployStatus())) {
+                log.warn("应用正在部署中，跳过内部部署: appId={}", appId);
+                return null;
+            }
+
+            // 检查代码目录
+            String sourceDirPath = app.getCodeGenType() + "_" + appId;
+            File sourceDir = new File(AppConstant.CODE_OUTPUT_ROOT_DIR + File.separator + sourceDirPath);
+            if (!sourceDir.exists() || !sourceDir.isDirectory()) {
+                log.warn("代码目录不存在，跳过内部部署: appId={}", appId);
+                return null;
+            }
+
+            log.info("开始内部部署 (triggerSource={}): appId={}", triggerSource, appId);
+            return executeDeploy(app, sourceDir);
+
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("内部部署被中断: appId={}", appId, e);
+            return null;
+        } finally {
+            if (lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
+        }
+    }
+
+    /**
+     * 执行部署核心逻辑（不包含权限校验和分布式锁）
+     * <p>
+     * 由 {@link #deployApp(Long, User)} 和 {@link #internalDeployApp(Long, String)} 共用。
+     * 处理：Vue 构建 → 文件复制 → DB 更新 → 事件发布 → 异步截图。
+     *
+     * @param app      应用实体（必须包含 id、codeGenType、deployKey 字段）
+     * @param sourceDir 代码源目录
+     * @return 部署访问 URL
+     */
+    private String executeDeploy(App app, File sourceDir) {
+        Long appId = app.getId();
+        String codeGenType = app.getCodeGenType();
+        CodeGenTypeEnum codeGenTypeEnum = CodeGenTypeEnum.getEnumByValue(codeGenType);
+
+        // 1. 复用或生成 deployKey
+        String deployKey = app.getDeployKey();
+        if (StrUtil.isBlank(deployKey)) {
+            deployKey = RandomUtil.randomString(6);
+        }
+
+        // 2. Vue 项目特殊处理：执行构建
+        if (codeGenTypeEnum == CodeGenTypeEnum.VUE_PROJECT) {
+            boolean buildSuccess = vueProjectBuilder.buildProject(sourceDir.getAbsolutePath());
+            ThrowUtils.throwIf(!buildSuccess, ErrorCode.SYSTEM_ERROR, "Vue 项目构建失败，请检查代码和依赖");
+
+            File distDir = new File(sourceDir, "dist");
+            ThrowUtils.throwIf(!distDir.exists(), ErrorCode.SYSTEM_ERROR, "Vue 项目构建完成但未生成 dist 目录");
+            sourceDir = distDir;
+            log.info("Vue 项目构建成功，将部署 dist 目录: {}", distDir.getAbsolutePath());
+        }
+
+        // 3. 复制文件到部署目录
+        String deployDirPath = AppConstant.CODE_DEPLOY_ROOT_DIR + File.separator + deployKey;
+        try {
+            FileUtil.copyContent(sourceDir, new File(deployDirPath), true);
+        } catch (Exception e) {
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "部署失败：" + e.getMessage());
+        }
+
+        // 4. 更新应用的 deployKey 和部署时间
+        App updateApp = new App();
+        updateApp.setId(appId);
+        updateApp.setDeployKey(deployKey);
+        updateApp.setDeployedTime(LocalDateTime.now());
+        updateApp.setDeployStatus(DeployStatusEnum.ONLINE.getValue());
+
+        if (codeGenTypeEnum == CodeGenTypeEnum.VUE_PROJECT) {
+            updateApp.setLastBuildTime(LocalDateTime.now());
+        }
+
+        boolean updateResult = this.updateById(updateApp);
+        ThrowUtils.throwIf(!updateResult, ErrorCode.OPERATION_ERROR, "更新应用部署信息失败");
+
+        // 5. 发布部署事件（RAG 语料库监听此事件更新精选应用的 embedding）
+        applicationContext.publishEvent(new AppDeployedEvent(this, appId, deployKey, codeGenType));
+        log.debug("已发布部署事件: appId={}, deployKey={}", appId, deployKey);
+
+        // 6. 异步截图
+        String appDeployUrl = String.format("%s/%s/", AppConstant.CODE_DEPLOY_HOST, deployKey);
+        generateAppScreenshotAsync(appId, appDeployUrl);
+        return appDeployUrl;
     }
     /**
      * 删除应用时关联删除对话历史和AI生成文件
@@ -543,11 +647,17 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
             // 5. 状态校验
             validateStatusTransition(app.getDeployStatus(), DeployStatusEnum.OFFLINE);
 
-            // 6. 先保存文件操作所需的旧值（DB 更新后 deployKey 会被清空）
+            // 6. 精选应用保护：禁止直接下线
+            if (AppConstant.GOOD_APP_PRIORITY.equals(app.getPriority())) {
+                throw new BusinessException(ErrorCode.OPERATION_ERROR,
+                        "该应用是精选应用，无法直接下线。请先取消精选后再操作");
+            }
+
+            // 8. 先保存文件操作所需的旧值（DB 更新后 deployKey 会被清空）
             String oldDeployKey = app.getDeployKey();
             CodeGenTypeEnum codeGenType = CodeGenTypeEnum.getEnumByValue(app.getCodeGenType());
 
-            // 7. 更新数据库（先于文件操作，保证状态一致）
+            // 9. 更新数据库（先于文件操作，保证状态一致）
             App updateApp = new App();
             updateApp.setId(appId);
             updateApp.setDeployStatus(DeployStatusEnum.OFFLINE.getValue());
@@ -558,7 +668,7 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
             // ↑ DB 已提交，状态为 OFFLINE。
             //   即使后续文件操作失败，也比"DB 仍显示 ONLINE 但文件已丢失"更安全
 
-            // 8. 文件归档（DB 已一致，文件操作失败不影响状态正确性）
+            // 10. 文件归档（DB 已一致，文件操作失败不影响状态正确性）
             String archivePath = null;
             if (StrUtil.isNotBlank(oldDeployKey)) {
                 if (codeGenType == CodeGenTypeEnum.VUE_PROJECT) {

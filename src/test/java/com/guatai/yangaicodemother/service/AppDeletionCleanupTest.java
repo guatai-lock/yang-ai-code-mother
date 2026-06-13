@@ -1,6 +1,7 @@
 package com.guatai.yangaicodemother.service;
 
 import cn.hutool.core.io.FileUtil;
+import cn.hutool.core.util.StrUtil;
 import com.guatai.yangaicodemother.common.AppConstant;
 import com.guatai.yangaicodemother.exception.BusinessException;
 import com.guatai.yangaicodemother.exception.ErrorCode;
@@ -359,12 +360,19 @@ public class AppDeletionCleanupTest {
     void deleteOfflineApp_shouldCancelApprovedFeaturedApplication() {
         insertApp("OFFLINE", null, archivePath, TEST_CODE_TYPE);
 
-        // 申请 + 审核通过（reviewApplications 会将 priority 设为 99）
+        // 申请 + 审核通过（reviewApplications 会将 priority 设为 99 + 自动部署）
         User user = createTestUser();
         Long applicationId = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请", user);
         featuredAppApplicationService.reviewApplications(
                 java.util.List.of(applicationId), true, "通过",
                 User.builder().id(1L).userName("admin").build());
+
+        // 自动部署生成了随机 deployKey，先记录下来用于清理
+        String autoDeployKey = jdbcTemplate.queryForObject(
+                "SELECT deployKey FROM app WHERE id = ?", String.class, TEST_APP_ID);
+        // 审核通过后自动部署会将应用设为 ONLINE，需要手动置为 OFFLINE 以测试删除
+        jdbcTemplate.update("UPDATE app SET deployStatus = 'OFFLINE', deployKey = NULL WHERE id = ?",
+                TEST_APP_ID);
 
         // 验证已 APPROVED，priority=99
         AppFeaturedApplication before = featuredAppApplicationService.getById(applicationId);
@@ -386,6 +394,11 @@ public class AppDeletionCleanupTest {
                 "SELECT priority FROM app WHERE id = ?", Integer.class, TEST_APP_ID);
         assertEquals(Integer.valueOf(0), priorityAfter,
                 "应用删除后 priority 应重置为 0");
+
+        // 清理自动部署生成的随机目录
+        if (StrUtil.isNotBlank(autoDeployKey)) {
+            FileUtil.del(new File(AppConstant.CODE_DEPLOY_ROOT_DIR + File.separator + autoDeployKey));
+        }
     }
 
     // ====================================================================

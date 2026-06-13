@@ -77,4 +77,16 @@ public interface FeaturedAppApplicationService extends IService<AppFeaturedAppli
      * @param adminUser 管理员
      */
     void unfeatureApp(List<Long> appIds, User adminUser);
+
+    /**
+     * 精选应用内容更新后请求重新审核
+     * <p>
+     * 精选已部署的应用通过 {@code chatToGenCode()} 修改代码后调用此方法，
+     * 创建新的 PENDING 申请记录。旧部署版本继续在线，管理员审核通过后重新部署新代码。
+     *
+     * @param appId     应用id
+     * @param loginUser 当前登录用户
+     * @return 申请记录id
+     */
+    Long requestContentReview(Long appId, User loginUser);
 }

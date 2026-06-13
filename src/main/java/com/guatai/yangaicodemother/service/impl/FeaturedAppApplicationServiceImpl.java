@@ -15,6 +15,7 @@ import com.guatai.yangaicodemother.model.dto.featuredapp.FeaturedAppQueryRequest
 import com.guatai.yangaicodemother.model.entity.App;
 import com.guatai.yangaicodemother.model.entity.AppFeaturedApplication;
 import com.guatai.yangaicodemother.model.entity.User;
+import com.guatai.yangaicodemother.model.enums.DeployStatusEnum;
 import com.guatai.yangaicodemother.model.enums.FeaturedAppStatusEnum;
 import com.guatai.yangaicodemother.model.vo.FeaturedAppApplicationVO;
 import com.guatai.yangaicodemother.service.AppService;
@@ -33,6 +34,7 @@ import org.redisson.api.RedissonClient;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import jakarta.annotation.PostConstruct;
+import java.io.File;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -88,7 +90,14 @@ public class FeaturedAppApplicationServiceImpl
             throw new BusinessException(ErrorCode.OPERATION_ERROR, "该应用已经是精选应用");
         }
 
-        // 3. 分布式锁 + 事务，防止并发创建重复申请
+        // 3. 检查应用是否已生成代码
+        String sourceDirName = app.getCodeGenType() + "_" + appId;
+        String sourceDirPath = AppConstant.CODE_OUTPUT_ROOT_DIR + File.separator + sourceDirName;
+        if (!new File(sourceDirPath).exists()) {
+            throw new BusinessException(ErrorCode.OPERATION_ERROR, "该应用尚未生成代码，无法申请精选");
+        }
+
+        // 4. 分布式锁 + 事务，防止并发创建重复申请
         RLock lock = redissonClient.getLock("featured:apply:" + appId);
         lock.lock();
         try {
@@ -119,6 +128,51 @@ public class FeaturedAppApplicationServiceImpl
                 ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR, "申请失败");
 
                 log.info("用户申请精选应用成功，用户ID: {}, 应用ID: {}", loginUser.getId(), appId);
+                return application.getId();
+            });
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    @Override
+    public Long requestContentReview(Long appId, User loginUser) {
+        // 1. 校验应用是否存在且属于当前用户
+        App app = appMapper.selectOneById(appId);
+        ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR, "应用不存在");
+        if (!app.getUserId().equals(loginUser.getId())) {
+            throw new BusinessException(ErrorCode.NO_AUTH_ERROR, "只能操作自己的应用");
+        }
+
+        // 2. 必须是精选已部署应用
+        ThrowUtils.throwIf(!AppConstant.GOOD_APP_PRIORITY.equals(app.getPriority()),
+                ErrorCode.OPERATION_ERROR, "该应用不是精选应用");
+        ThrowUtils.throwIf(!DeployStatusEnum.ONLINE.getValue().equals(app.getDeployStatus()),
+                ErrorCode.OPERATION_ERROR, "该应用尚未部署，请先部署");
+
+        // 3. 分布式锁 + 事务，防止并发创建重复申请
+        RLock lock = redissonClient.getLock("featured:apply:" + appId);
+        lock.lock();
+        try {
+            return transactionTemplate.execute(status -> {
+                // 4. 检查是否已有待审核的申请
+                if (hasPendingApplication(appId)) {
+                    throw new BusinessException(ErrorCode.OPERATION_ERROR,
+                            "该应用已有待审核的内容更新申请，请等待审核完成");
+                }
+
+                // 5. 创建新的 PENDING 申请记录（建议的"理由"标识为内容更新）
+                AppFeaturedApplication application = AppFeaturedApplication.builder()
+                        .appId(appId)
+                        .userId(loginUser.getId())
+                        .reason("精选应用内容更新，请求重新审核")
+                        .status(FeaturedAppStatusEnum.PENDING.getValue())
+                        .build();
+
+                boolean result = save(application);
+                ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR, "提交内容审核申请失败");
+
+                log.info("精选应用提交内容更新审核，用户ID: {}, 应用ID: {}", loginUser.getId(), appId);
                 return application.getId();
             });
         } finally {
@@ -223,16 +277,41 @@ public class FeaturedAppApplicationServiceImpl
             return null;
         });
 
-        // 4. 如果通过审核，在事务外批量更新应用优先级 + 驱逐缓存 + 发布精选事件
+        // 4. 如果通过审核，在事务外自动部署 + 批量更新优先级 + 驱逐缓存 + 发布精选事件
         if (approved && CollUtil.isNotEmpty(approvedAppIds)) {
-            batchUpdateAppPriority(approvedAppIds);
-            // 驱逐精选应用缓存，确保新通过的应用立即出现在精选列表
-            evictGoodAppPageCache();
-            // 发布精选事件（RAG 语料库监听并增量加载）
+
+            // 4a. 自动部署（首次精选）或重新部署（内容审核通过）
+            //     先部署再更新优先级：确保部署失败时不会造成 priority=99 但未部署的状态不一致
+            Set<Long> deployedAppIds = new HashSet<>();
             for (Long appId : approvedAppIds) {
+                try {
+                    App app = appMapper.selectOneById(appId);
+                    if (app == null) continue;
+
+                    boolean isNewFeatured = !DeployStatusEnum.ONLINE.getValue().equals(app.getDeployStatus());
+                    String triggerSource = isNewFeatured ? "review-auto-deploy" : "content-review-approve";
+                    String deployUrl = appService.internalDeployApp(appId, triggerSource);
+                    if (deployUrl != null) {
+                        deployedAppIds.add(appId);
+                        log.info("审核通过后{}: appId={}", isNewFeatured ? "自动部署" : "重新部署", appId);
+                    }
+                } catch (Exception e) {
+                    log.error("审核通过后部署失败: appId={}", appId, e);
+                }
+            }
+
+            // 4b. 仅对部署成功的应用更新优先级
+            if (CollUtil.isNotEmpty(deployedAppIds)) {
+                batchUpdateAppPriority(deployedAppIds);
+            }
+
+            // 4c. 驱逐精选应用缓存，确保新通过的应用立即出现在精选列表
+            evictGoodAppPageCache();
+            // 4d. 发布精选事件（RAG 语料库监听并增量加载，仅对优先已更新的应用）
+            for (Long appId : deployedAppIds) {
                 applicationContext.publishEvent(new AppFeaturedEvent(this, appId));
             }
-            log.info("批量审核通过 {} 个应用，已主动刷新缓存并发布精选事件", approvedAppIds.size());
+            log.info("批量审核通过 {} 个应用，成功部署 {} 个", approvedAppIds.size(), deployedAppIds.size());
         }
 
         log.info("批量审核完成，总数: {}, 成功: {}, 审核结果: {}, 审核人: {}",

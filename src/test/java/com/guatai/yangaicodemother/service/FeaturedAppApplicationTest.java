@@ -10,6 +10,8 @@ import com.guatai.yangaicodemother.model.entity.User;
 import com.guatai.yangaicodemother.model.enums.FeaturedAppStatusEnum;
 import com.guatai.yangaicodemother.model.vo.FeaturedAppApplicationVO;
 import com.mybatisflex.core.paginate.Page;
+import java.io.File;
+import cn.hutool.core.io.FileUtil;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.*;
@@ -86,6 +88,15 @@ public class FeaturedAppApplicationTest {
                 TEST_APP_ID, TEST_APP_ID_2, TEST_APP_ID_3, TEST_APP_ID_4, TEST_APP_ID_OTHER);
         jdbcTemplate.update("DELETE FROM app WHERE id IN (?, ?, ?, ?, ?)",
                 TEST_APP_ID, TEST_APP_ID_2, TEST_APP_ID_3, TEST_APP_ID_4, TEST_APP_ID_OTHER);
+        // 清理测试创建的模拟代码目录
+        cleanupCodeDirs();
+    }
+
+    private void cleanupCodeDirs() {
+        for (Long id : new Long[]{TEST_APP_ID, TEST_APP_ID_2, TEST_APP_ID_3, TEST_APP_ID_4, TEST_APP_ID_OTHER}) {
+            String codeDirPath = AppConstant.CODE_OUTPUT_ROOT_DIR + File.separator + "html_" + id;
+            FileUtil.del(new File(codeDirPath));
+        }
     }
 
     private void createTestApps() {
@@ -106,6 +117,10 @@ public class FeaturedAppApplicationTest {
                 .editTime(LocalDateTime.now())
                 .build();
         assertTrue(appService.save(app), "测试应用" + id + "创建失败");
+
+        // 创建模拟的代码输出目录（applyFeaturedApp 会检查目录存在性）
+        String codeDirPath = AppConstant.CODE_OUTPUT_ROOT_DIR + File.separator + "html_" + id;
+        FileUtil.mkdir(new File(codeDirPath));
     }
 
     private User createUser(Long id) {

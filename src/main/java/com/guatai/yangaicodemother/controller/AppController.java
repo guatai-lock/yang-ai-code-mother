@@ -10,6 +10,7 @@ import com.guatai.yangaicodemother.exception.ErrorCode;
 import com.guatai.yangaicodemother.model.dto.app.*;
 import com.guatai.yangaicodemother.model.entity.App;
 import com.guatai.yangaicodemother.model.entity.User;
+import com.guatai.yangaicodemother.model.enums.DeployStatusEnum;
 import com.guatai.yangaicodemother.model.vo.AppVO;
 import com.guatai.yangaicodemother.model.vo.DeployStatusVO;
 import com.guatai.yangaicodemother.ratelimit.annotation.RateLimit;
@@ -319,9 +320,12 @@ public class AppController {
         long pageSize = appQueryRequest.getPageSize();
         ThrowUtils.throwIf(pageSize > 20, ErrorCode.PARAMS_ERROR, "每页最多查询 20 个应用");
         long pageNum = appQueryRequest.getPageNum();
-        // 只查询精选的应用
-        appQueryRequest.setPriority(AppConstant.GOOD_APP_PRIORITY);
-        QueryWrapper queryWrapper = appService.getQueryWrapper(appQueryRequest);
+        // 只查询在线且已部署的精选应用，按更新时间倒序保证分页确定性
+        QueryWrapper queryWrapper = QueryWrapper.create()
+                .eq("priority", AppConstant.GOOD_APP_PRIORITY)
+                .eq("deployStatus", DeployStatusEnum.ONLINE.getValue())
+                .isNotNull("deployKey")
+                .orderBy("updateTime", false);
         // 分页查询
         Page<App> appPage = appService.page(Page.of(pageNum, pageSize), queryWrapper);
         // 数据封装

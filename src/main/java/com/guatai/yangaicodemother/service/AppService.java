@@ -69,6 +69,18 @@ public interface AppService extends IService<App> {
      * @return
      */
     String deployApp(Long appId, User loginUser);
+
+    /**
+     * 内部部署（精选应用自动部署/重新部署，无用户鉴权）
+     * <p>
+     * 用于审核通过后自动部署、内容审核通过后重新部署等场景。
+     * 不校验用户权限，DEPLOYING 状态静默跳过，代码目录不存在时静默跳过。
+     *
+     * @param appId         应用 ID
+     * @param triggerSource 触发来源标识（如 "review-auto-deploy"、"content-review-approve"）
+     * @return 部署访问 URL，跳过时返回 null
+     */
+    String internalDeployApp(Long appId, String triggerSource);
     /**
      * 异步生成应用截图并更新封面
      *

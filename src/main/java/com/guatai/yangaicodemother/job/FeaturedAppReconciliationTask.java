@@ -10,6 +10,8 @@ import com.guatai.yangaicodemother.service.AppService;
 import com.mybatisflex.core.query.QueryWrapper;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -30,6 +32,9 @@ public class FeaturedAppReconciliationTask {
 
     @Resource
     private AppService appService;
+
+    @Resource
+    private CacheManager cacheManager;
 
     /**
      * 每 5 分钟执行一次对账
@@ -72,6 +77,16 @@ public class FeaturedAppReconciliationTask {
             return update;
         }).collect(Collectors.toList());
         appService.updateBatch(updateList);
+
+        // 5. 清除精选应用缓存
+        try {
+            Cache cache = cacheManager.getCache("good_app_page");
+            if (cache != null) {
+                cache.clear();
+            }
+        } catch (Exception e) {
+            log.warn("清除精选应用缓存失败", e);
+        }
 
         log.info("精选应用对账任务完成，已修复 {} 个应用的优先级", unmatchedApps.size());
     }
