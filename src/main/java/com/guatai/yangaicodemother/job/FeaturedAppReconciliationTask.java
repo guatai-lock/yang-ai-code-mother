@@ -2,6 +2,7 @@ package com.guatai.yangaicodemother.job;
 
 import cn.hutool.core.collection.CollUtil;
 import com.guatai.yangaicodemother.common.AppConstant;
+import com.guatai.yangaicodemother.event.AppFeaturedEvent;
 import com.guatai.yangaicodemother.mapper.AppFeaturedApplicationMapper;
 import com.guatai.yangaicodemother.model.entity.App;
 import com.guatai.yangaicodemother.model.entity.AppFeaturedApplication;
@@ -12,6 +13,7 @@ import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.Cache;
 import org.springframework.cache.CacheManager;
+import org.springframework.context.ApplicationContext;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -35,6 +37,9 @@ public class FeaturedAppReconciliationTask {
 
     @Resource
     private CacheManager cacheManager;
+
+    @Resource
+    private ApplicationContext applicationContext;
 
     /**
      * 每 5 分钟执行一次对账
@@ -88,6 +93,15 @@ public class FeaturedAppReconciliationTask {
             log.warn("清除精选应用缓存失败", e);
         }
 
-        log.info("精选应用对账任务完成，已修复 {} 个应用的优先级", unmatchedApps.size());
+        // 6. 发布精选事件触发 RAG 增量加载（对账兜底：确保 RAG 向量库与精选状态一致）
+        for (App app : unmatchedApps) {
+            try {
+                applicationContext.publishEvent(new AppFeaturedEvent(this, app.getId()));
+            } catch (Exception e) {
+                log.warn("发布精选事件失败: appId={}", app.getId(), e);
+            }
+        }
+
+        log.info("精选应用对账任务完成，已修复 {} 个应用的优先级并触发 RAG 增量加载", unmatchedApps.size());
     }
 }

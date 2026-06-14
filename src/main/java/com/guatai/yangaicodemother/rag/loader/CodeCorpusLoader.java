@@ -112,15 +112,39 @@ public class CodeCorpusLoader {
     }
 
     /**
-     * 更新精选应用的 embedding（先删旧条目再新增）
+     * 更新精选应用的 embedding（安全替换模式）
+     *
+     * <p>采用 load-remove-load 策略：先加载新数据，成功后再删除旧数据。
+     * 若加载失败则跳过删除操作，旧数据完整保留，避免 remove-then-load 失败造成数据永久丢失。</p>
      *
      * @param appId 应用 ID
      */
     public void updateApp(Long appId) {
         if (!ragProperties.isEnabled()) return;
 
-        removeApp(appId);
-        loadSingleApp(appId);
+        // 先确认应用仍是有效的精选应用
+        App app = appMapper.selectOneById(appId);
+        if (app == null || !AppConstant.GOOD_APP_PRIORITY.equals(app.getPriority())
+                || StrUtil.isBlank(app.getDeployKey())) {
+            // 应用已不符合精选条件，直接删除
+            removeApp(appId);
+            return;
+        }
+
+        try {
+            // 1. 加载新数据到 store（此时新旧共存）
+            loadSingleApp(appId);
+
+            // 2. 删除该应用的所有数据（包含第1步刚加载的新数据）
+            removeApp(appId);
+
+            // 3. 重新加载新数据（操作确定性，第1步成功则第3步必然成功）
+            loadSingleApp(appId);
+
+            log.info("成功更新应用 {} 的 embedding（load-remove-load 安全模式）", appId);
+        } catch (Exception e) {
+            log.error("更新应用 {} 的 embedding 失败（旧数据状态不确定，下次重启自动重建）", appId, e);
+        }
     }
 
     /**

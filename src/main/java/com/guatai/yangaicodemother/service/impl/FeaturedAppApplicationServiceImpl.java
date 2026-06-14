@@ -32,11 +32,13 @@ import org.springframework.transaction.annotation.Transactional;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 import jakarta.annotation.PostConstruct;
 import java.io.File;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
@@ -74,6 +76,9 @@ public class FeaturedAppApplicationServiceImpl
     @PostConstruct
     public void init() {
         this.transactionTemplate = new TransactionTemplate(transactionManager);
+        // 防御外层 @Transactional：使用 REQUIRES_NEW 使事务边界独立，
+        // 防止 updateBatch 在嵌套事务中无法 flush 导致审核状态不提交
+        this.transactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
     @Override
@@ -270,10 +275,8 @@ public class FeaturedAppApplicationServiceImpl
             }
         }
 
-        // 3. 在事务中批量更新申请记录
-        // ⚠️ 注意：此方法没有 @Transactional 注解，TransactionTemplate 独占事务边界。
-        //    如果将来在 controller/service 外层添加 @Transactional，会导致 updateBatch
-        //    的 SQL 在嵌套事务中无法 flush，审核状态不提交。如需外层事务，请改用 REQUIRES_NEW。
+        // 3. 在事务中批量更新申请记录（TransactionTemplate 已配置 REQUIRES_NEW 防御外层事务）
+        //    updateBatch 的 SQL 在独立事务中执行，Controller 层若有 @Transactional 也不会影响提交
         transactionTemplate.execute(status -> {
             boolean updateResult = updateBatch(updateList);
             if (!updateResult) {
@@ -290,19 +293,26 @@ public class FeaturedAppApplicationServiceImpl
             //     先部署再更新优先级：确保部署失败时不会造成 priority=99 但未部署的状态不一致
             Set<Long> deployedAppIds = new HashSet<>();
             for (Long appId : approvedAppIds) {
+                // 获取应用级部署锁，防止与 deployApp/deployOffline 并发冲突
+                RLock deployLock = redissonClient.getLock("app:deploy:lock:" + appId);
+                deployLock.lock();
                 try {
                     App app = appMapper.selectOneById(appId);
                     if (app == null) continue;
 
                     boolean isNewFeatured = !DeployStatusEnum.ONLINE.getValue().equals(app.getDeployStatus());
                     String triggerSource = isNewFeatured ? "review-auto-deploy" : "content-review-approve";
-                    String deployUrl = appService.internalDeployApp(appId, triggerSource);
+
+                    // 部署失败自动重试（最多 3 次）
+                    String deployUrl = deployWithRetry(appId, triggerSource, 3);
                     if (deployUrl != null) {
                         deployedAppIds.add(appId);
                         log.info("审核通过后{}: appId={}", isNewFeatured ? "自动部署" : "重新部署", appId);
                     }
                 } catch (Exception e) {
                     log.error("审核通过后部署失败: appId={}", appId, e);
+                } finally {
+                    deployLock.unlock();
                 }
             }
 
@@ -515,6 +525,40 @@ public class FeaturedAppApplicationServiceImpl
             .eq("appId", appId)
             .eq("status", FeaturedAppStatusEnum.PENDING.getValue());
         return count(queryWrapper) > 0;
+    }
+
+    /**
+     * 部署失败时自动重试（带递增延迟）
+     * <p>
+     * {@code internalDeployApp} 内部已获取分布式锁，此处锁由外层 {@code reviewApplications} 持有，
+     * 基于 Redisson RLock 可重入特性，内部 tryLock 直接成功。
+     *
+     * @param appId        应用 ID
+     * @param triggerSource 触发来源标识
+     * @param maxRetries    最大重试次数
+     * @return 部署 URL，重试耗尽后返回 null
+     */
+    private String deployWithRetry(Long appId, String triggerSource, int maxRetries) {
+        for (int i = 0; i < maxRetries; i++) {
+            try {
+                String result = appService.internalDeployApp(appId, triggerSource);
+                if (result != null) return result;
+                log.warn("部署返回 null (appId={}, attempt={}/{}), 将{}",
+                        appId, i + 1, maxRetries, i < maxRetries - 1 ? "重试" : "放弃");
+            } catch (Exception e) {
+                log.warn("部署异常 (appId={}, attempt={}/{}): {}",
+                        appId, i + 1, maxRetries, e.getMessage());
+            }
+            if (i < maxRetries - 1) {
+                try {
+                    Thread.sleep(TimeUnit.SECONDS.toMillis(i + 1)); // 递增等待: 1s, 2s, 3s
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    return null;
+                }
+            }
+        }
+        return null;
     }
 
     /**
