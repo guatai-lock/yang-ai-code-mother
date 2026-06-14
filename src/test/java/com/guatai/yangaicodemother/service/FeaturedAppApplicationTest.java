@@ -179,7 +179,7 @@ public class FeaturedAppApplicationTest {
     @DisplayName("[申请] 成功申请精选")
     void testApplySuccess() {
         Long applicationId = featuredAppApplicationService.applyFeaturedApp(
-                TEST_APP_ID, "这是一个很酷的应用", createTestUser());
+                TEST_APP_ID, "这是一个很酷的应用", null, createTestUser());
         assertNotNull(applicationId);
         assertTrue(applicationId > 0);
 
@@ -196,7 +196,7 @@ public class FeaturedAppApplicationTest {
     @DisplayName("[申请] 应用不存在抛 NOT_FOUND_ERROR")
     void testApplyAppNotFound() {
         BusinessException ex = assertThrows(BusinessException.class,
-                () -> featuredAppApplicationService.applyFeaturedApp(-999L, "理由", createTestUser()));
+                () -> featuredAppApplicationService.applyFeaturedApp(-999L, "理由", null, createTestUser()));
         assertEquals(ErrorCode.NOT_FOUND_ERROR.getCode(), ex.getCode());
     }
 
@@ -205,7 +205,7 @@ public class FeaturedAppApplicationTest {
     @DisplayName("[申请] 申请他人的应用抛 NO_AUTH_ERROR")
     void testApplyOtherApp() {
         BusinessException ex = assertThrows(BusinessException.class,
-                () -> featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID_OTHER, "理由", createTestUser()));
+                () -> featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID_OTHER, "理由", null, createTestUser()));
         assertEquals(ErrorCode.NO_AUTH_ERROR.getCode(), ex.getCode());
     }
 
@@ -218,7 +218,7 @@ public class FeaturedAppApplicationTest {
         appService.updateById(app);
 
         BusinessException ex = assertThrows(BusinessException.class,
-                () -> featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "理由", createTestUser()));
+                () -> featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "理由", null, createTestUser()));
         assertEquals(ErrorCode.OPERATION_ERROR.getCode(), ex.getCode());
     }
 
@@ -226,10 +226,10 @@ public class FeaturedAppApplicationTest {
     @Order(14)
     @DisplayName("[申请] 已有待审核的申请时不能重复申请同一个应用")
     void testApplyDuplicatePending() {
-        featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "第一次申请", createTestUser());
+        featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "第一次申请", null, createTestUser());
 
         BusinessException ex = assertThrows(BusinessException.class,
-                () -> featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "第二次申请", createTestUser()));
+                () -> featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "第二次申请", null, createTestUser()));
         assertEquals(ErrorCode.OPERATION_ERROR.getCode(), ex.getCode());
     }
 
@@ -237,10 +237,10 @@ public class FeaturedAppApplicationTest {
     @Order(15)
     @DisplayName("[申请] 同一用户只能有一个待审核申请")
     void testApplyOnePendingPerUser() {
-        featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请", createTestUser());
+        featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请", null, createTestUser());
 
         BusinessException ex = assertThrows(BusinessException.class,
-                () -> featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID_4, "再次申请", createTestUser()));
+                () -> featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID_4, "再次申请", null, createTestUser()));
         assertEquals(ErrorCode.OPERATION_ERROR.getCode(), ex.getCode());
     }
 
@@ -248,10 +248,10 @@ public class FeaturedAppApplicationTest {
     @Order(16)
     @DisplayName("[申请] 撤销后可重新申请")
     void testApplyAfterCancel() {
-        Long appId = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请", createTestUser());
+        Long appId = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请", null, createTestUser());
         featuredAppApplicationService.updateApplication(appId, "CANCEL", createTestUser());
 
-        Long newAppId = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "重新申请", createTestUser());
+        Long newAppId = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "重新申请", null, createTestUser());
         assertNotNull(newAppId);
         assertNotEquals(appId, newAppId);
     }
@@ -260,10 +260,10 @@ public class FeaturedAppApplicationTest {
     @Order(17)
     @DisplayName("[申请] 被拒绝后可重新申请")
     void testApplyAfterReject() {
-        Long appId = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请", createTestUser());
+        Long appId = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请", null, createTestUser());
         featuredAppApplicationService.reviewApplications(List.of(appId), false, "不符合要求", createAdminUser());
 
-        Long newAppId = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "重新申请", createTestUser());
+        Long newAppId = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "重新申请", null, createTestUser());
         assertNotNull(newAppId);
     }
 
@@ -275,7 +275,7 @@ public class FeaturedAppApplicationTest {
     @Order(20)
     @DisplayName("[撤销] 成功撤销待审核的申请")
     void testCancelSuccess() {
-        Long appId = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请", createTestUser());
+        Long appId = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请", null, createTestUser());
         assertTrue(featuredAppApplicationService.updateApplication(appId, "CANCEL", createTestUser()));
 
         AppFeaturedApplication app = featuredAppApplicationService.getById(appId);
@@ -295,7 +295,7 @@ public class FeaturedAppApplicationTest {
     @Order(22)
     @DisplayName("[撤销] 只能撤销自己的申请")
     void testCancelOtherApp() {
-        Long appId = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请", createTestUser());
+        Long appId = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请", null, createTestUser());
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> featuredAppApplicationService.updateApplication(appId, "CANCEL", createOtherUser()));
@@ -306,7 +306,7 @@ public class FeaturedAppApplicationTest {
     @Order(23)
     @DisplayName("[撤销] 已通过的申请不能撤销")
     void testCancelApproved() {
-        Long appId = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请", createTestUser());
+        Long appId = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请", null, createTestUser());
         featuredAppApplicationService.reviewApplications(List.of(appId), true, "通过", createAdminUser());
 
         BusinessException ex = assertThrows(BusinessException.class,
@@ -318,7 +318,7 @@ public class FeaturedAppApplicationTest {
     @Order(24)
     @DisplayName("[撤销] 不支持的 action 抛 PARAMS_ERROR")
     void testCancelInvalidAction() {
-        Long appId = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请", createTestUser());
+        Long appId = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请", null, createTestUser());
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> featuredAppApplicationService.updateApplication(appId, "INVALID_ACTION", createTestUser()));
@@ -333,7 +333,7 @@ public class FeaturedAppApplicationTest {
     @Order(30)
     @DisplayName("[审核] 单个审核通过")
     void testReviewSingleApprove() {
-        Long appId = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请", createTestUser());
+        Long appId = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请", null, createTestUser());
 
         int count = featuredAppApplicationService.reviewApplications(
                 List.of(appId), true, "符合精选要求", createAdminUser());
@@ -350,7 +350,7 @@ public class FeaturedAppApplicationTest {
     @Order(31)
     @DisplayName("[审核] 单个审核拒绝")
     void testReviewSingleReject() {
-        Long appId = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请", createTestUser());
+        Long appId = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请", null, createTestUser());
 
         int count = featuredAppApplicationService.reviewApplications(
                 List.of(appId), false, "功能不够完善", createAdminUser());
@@ -367,8 +367,8 @@ public class FeaturedAppApplicationTest {
     @Order(32)
     @DisplayName("[审核] 批量通过多个用户的应用")
     void testReviewBatchApprove() {
-        Long appId1 = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请", createTestUser());
-        Long appId2 = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID_2, "申请", createUser(TEST_USER_ID_2));
+        Long appId1 = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请", null, createTestUser());
+        Long appId2 = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID_2, "申请", null, createUser(TEST_USER_ID_2));
 
         int count = featuredAppApplicationService.reviewApplications(
                 List.of(appId1, appId2), true, "都符合要求", createAdminUser());
@@ -386,8 +386,8 @@ public class FeaturedAppApplicationTest {
     @Order(33)
     @DisplayName("[审核] 批量审核时只处理待审核的记录")
     void testReviewBatchMixed() {
-        Long appId1 = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请", createTestUser());
-        Long appId2 = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID_2, "申请", createUser(TEST_USER_ID_2));
+        Long appId1 = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请", null, createTestUser());
+        Long appId2 = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID_2, "申请", null, createUser(TEST_USER_ID_2));
 
         // 先撤销 appId2
         featuredAppApplicationService.updateApplication(appId2, "CANCEL", createUser(TEST_USER_ID_2));
@@ -407,7 +407,7 @@ public class FeaturedAppApplicationTest {
     @Order(34)
     @DisplayName("[审核] 无待审核记录返回 0")
     void testReviewNoPending() {
-        Long appId = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请", createTestUser());
+        Long appId = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请", null, createTestUser());
         featuredAppApplicationService.reviewApplications(List.of(appId), true, "通过", createAdminUser());
 
         int count = featuredAppApplicationService.reviewApplications(
@@ -443,7 +443,7 @@ public class FeaturedAppApplicationTest {
     @Order(41)
     @DisplayName("[待审核] 有 PENDING 申请时返回 true")
     void testHasPendingTrue() {
-        featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请", createTestUser());
+        featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请", null, createTestUser());
         assertTrue(featuredAppApplicationService.hasPendingApplication(TEST_APP_ID));
     }
 
@@ -451,7 +451,7 @@ public class FeaturedAppApplicationTest {
     @Order(42)
     @DisplayName("[待审核] 撤销后返回 false")
     void testHasPendingAfterCancel() {
-        Long appId = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请", createTestUser());
+        Long appId = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请", null, createTestUser());
         featuredAppApplicationService.updateApplication(appId, "CANCEL", createTestUser());
         assertFalse(featuredAppApplicationService.hasPendingApplication(TEST_APP_ID));
     }
@@ -460,7 +460,7 @@ public class FeaturedAppApplicationTest {
     @Order(43)
     @DisplayName("[待审核] 审核通过后返回 false")
     void testHasPendingAfterApprove() {
-        Long appId = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请", createTestUser());
+        Long appId = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请", null, createTestUser());
         featuredAppApplicationService.reviewApplications(List.of(appId), true, "通过", createAdminUser());
         assertFalse(featuredAppApplicationService.hasPendingApplication(TEST_APP_ID));
     }
@@ -473,7 +473,7 @@ public class FeaturedAppApplicationTest {
     @Order(50)
     @DisplayName("[我的申请] 查询我的申请列表")
     void testListMyApplications() {
-        featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请A", createTestUser());
+        featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请A", null, createTestUser());
 
         FeaturedAppQueryRequest query = new FeaturedAppQueryRequest();
         query.setUserId(TEST_USER_ID);
@@ -495,7 +495,7 @@ public class FeaturedAppApplicationTest {
     @Order(51)
     @DisplayName("[我的申请] 按状态筛选")
     void testListMyApplicationsByStatus() {
-        featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请", createTestUser());
+        featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请", null, createTestUser());
 
         FeaturedAppQueryRequest query = new FeaturedAppQueryRequest();
         query.setUserId(TEST_USER_ID);
@@ -513,7 +513,7 @@ public class FeaturedAppApplicationTest {
     @Order(52)
     @DisplayName("[管理员查询] 可查询所有申请")
     void testListApplicationsByAdmin() {
-        featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请", createTestUser());
+        featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请", null, createTestUser());
 
         FeaturedAppQueryRequest query = new FeaturedAppQueryRequest();
         query.setPageNum(1);
@@ -528,7 +528,7 @@ public class FeaturedAppApplicationTest {
     @Order(53)
     @DisplayName("[管理员查询] 按审核人筛选")
     void testListApplicationsByAdminFilter() {
-        Long appId = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请", createTestUser());
+        Long appId = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请", null, createTestUser());
         featuredAppApplicationService.reviewApplications(List.of(appId), true, "通过", createAdminUser());
 
         // 直接验证 reviewerId 已设置
@@ -603,7 +603,7 @@ public class FeaturedAppApplicationTest {
     void testFullFeaturedAppLifecycle() {
         // 1. 申请精选
         Long appId = featuredAppApplicationService.applyFeaturedApp(
-                TEST_APP_ID, "我的应用非常优秀", createTestUser());
+                TEST_APP_ID, "我的应用非常优秀", null, createTestUser());
         assertNotNull(appId);
         log.info("阶段1: 申请成功 ✓");
 
@@ -627,7 +627,7 @@ public class FeaturedAppApplicationTest {
 
         // 6. 再次申请应被拒绝（已标记为精选）
         BusinessException ex = assertThrows(BusinessException.class,
-                () -> featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "再次申请", createTestUser()));
+                () -> featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "再次申请", null, createTestUser()));
         assertEquals(ErrorCode.OPERATION_ERROR.getCode(), ex.getCode());
         log.info("阶段6: 重复申请被拦截 ✓");
     }
@@ -637,11 +637,11 @@ public class FeaturedAppApplicationTest {
     @DisplayName("[场景] 申请 → 撤销 → 重新申请 → 审核通过 → 优先级的完整流转")
     void testCancelAndReapplyLifecycle() {
         // 1. 申请 + 撤销
-        Long appId = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请", createTestUser());
+        Long appId = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请", null, createTestUser());
         featuredAppApplicationService.updateApplication(appId, "CANCEL", createTestUser());
 
         // 2. 重新申请
-        Long appId2 = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "重新申请", createTestUser());
+        Long appId2 = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "重新申请", null, createTestUser());
 
         // 3. 审核拒绝
         featuredAppApplicationService.reviewApplications(List.of(appId2), false, "不通过", createAdminUser());

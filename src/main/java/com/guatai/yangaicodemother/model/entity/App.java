@@ -106,6 +106,12 @@ public class App implements Serializable {
     private Long userId;
 
     /**
+     * 是否公开对话过程（精选应用专用）
+     */
+    @Column("public_chat_history")
+    private Boolean publicChatHistory;
+
+    /**
      * 编辑时间
      */
     @Column("editTime")

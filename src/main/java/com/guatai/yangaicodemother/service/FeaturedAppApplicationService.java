@@ -19,10 +19,11 @@ public interface FeaturedAppApplicationService extends IService<AppFeaturedAppli
      *
      * @param appId 应用id
      * @param reason 申请理由
+     * @param publicChatHistory 是否公开对话过程
      * @param loginUser 当前登录用户
      * @return 申请记录id
      */
-    Long applyFeaturedApp(Long appId, String reason, User loginUser);
+    Long applyFeaturedApp(Long appId, String reason, Boolean publicChatHistory, User loginUser);
 
     /**
      * 更新申请状态 (支持撤销等操作)
@@ -89,4 +90,15 @@ public interface FeaturedAppApplicationService extends IService<AppFeaturedAppli
      * @return 申请记录id
      */
     Long requestContentReview(Long appId, User loginUser);
+
+    /**
+     * 用户自行取消自己应用的精选状态
+     * <p>
+     * 应用所有者主动取消精选：将 APPROVED 记录置为 CANCELLED、priority 重置为 0、
+     * 驱逐精选缓存、发布 AppUnfeaturedEvent。
+     *
+     * @param appId     应用id
+     * @param loginUser 当前登录用户（必须是应用所有者）
+     */
+    void cancelFeaturedStatus(Long appId, User loginUser);
 }

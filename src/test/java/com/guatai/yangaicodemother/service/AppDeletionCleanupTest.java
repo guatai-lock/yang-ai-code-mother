@@ -314,7 +314,7 @@ public class AppDeletionCleanupTest {
 
         // 先申请精选（PENDING）
         User user = createTestUser();
-        Long applicationId = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请精选", user);
+        Long applicationId = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请精选", null, user);
         assertNotNull(applicationId);
 
         // 验证是 PENDING
@@ -342,7 +342,7 @@ public class AppDeletionCleanupTest {
 
         // 申请精选
         User user = createTestUser();
-        Long applicationId = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请", user);
+        Long applicationId = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请", null, user);
         assertNotNull(applicationId);
 
         // 删除被拦截
@@ -362,7 +362,7 @@ public class AppDeletionCleanupTest {
 
         // 申请 + 审核通过（reviewApplications 会将 priority 设为 99 + 自动部署）
         User user = createTestUser();
-        Long applicationId = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请", user);
+        Long applicationId = featuredAppApplicationService.applyFeaturedApp(TEST_APP_ID, "申请", null, user);
         featuredAppApplicationService.reviewApplications(
                 java.util.List.of(applicationId), true, "通过",
                 User.builder().id(1L).userName("admin").build());

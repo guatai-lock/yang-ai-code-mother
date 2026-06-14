@@ -20,5 +20,10 @@ public class FeaturedAppApplyRequest implements Serializable {
      */
     private String reason;
 
+    /**
+     * 是否公开对话过程
+     */
+    private Boolean publicChatHistory;
+
     private static final long serialVersionUID = 1L;
 }

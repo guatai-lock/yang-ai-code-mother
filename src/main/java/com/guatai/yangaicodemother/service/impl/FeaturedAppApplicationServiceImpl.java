@@ -77,7 +77,7 @@ public class FeaturedAppApplicationServiceImpl
     }
 
     @Override
-    public Long applyFeaturedApp(Long appId, String reason, User loginUser) {
+    public Long applyFeaturedApp(Long appId, String reason, Boolean publicChatHistory, User loginUser) {
         // 1. 校验应用是否存在且属于当前用户
         App app = appMapper.selectOneById(appId);
         ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR, "应用不存在");
@@ -121,6 +121,7 @@ public class FeaturedAppApplicationServiceImpl
                     .appId(appId)
                     .userId(loginUser.getId())
                     .reason(reason)
+                    .publicChatHistory(publicChatHistory != null && publicChatHistory)
                     .status(FeaturedAppStatusEnum.PENDING.getValue())
                     .build();
 
@@ -249,6 +250,8 @@ public class FeaturedAppApplicationServiceImpl
         // 2. 构建批量更新列表
         List<AppFeaturedApplication> updateList = new ArrayList<>();
         Set<Long> approvedAppIds = new HashSet<>();
+        // 记录 appId → publicChatHistory 映射，用于同步到 App 表
+        Map<Long, Boolean> appPublicChatHistoryMap = new HashMap<>();
 
         for (AppFeaturedApplication application : pendingApplications) {
             AppFeaturedApplication update = new AppFeaturedApplication();
@@ -261,6 +264,9 @@ public class FeaturedAppApplicationServiceImpl
 
             if (approved) {
                 approvedAppIds.add(application.getAppId());
+                if (Boolean.TRUE.equals(application.getPublicChatHistory())) {
+                    appPublicChatHistoryMap.put(application.getAppId(), true);
+                }
             }
         }
 
@@ -300,9 +306,9 @@ public class FeaturedAppApplicationServiceImpl
                 }
             }
 
-            // 4b. 仅对部署成功的应用更新优先级
+            // 4b. 仅对部署成功的应用更新优先级（同步 publicChatHistory）
             if (CollUtil.isNotEmpty(deployedAppIds)) {
-                batchUpdateAppPriority(deployedAppIds);
+                batchUpdateAppPriority(deployedAppIds, appPublicChatHistoryMap);
             }
 
             // 4c. 驱逐精选应用缓存，确保新通过的应用立即出现在精选列表
@@ -383,6 +389,62 @@ public class FeaturedAppApplicationServiceImpl
     }
 
     @Override
+    public void cancelFeaturedStatus(Long appId, User loginUser) {
+        // 1. 校验应用是否存在且属于当前用户
+        App app = appMapper.selectOneById(appId);
+        ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR, "应用不存在");
+        if (!app.getUserId().equals(loginUser.getId())) {
+            throw new BusinessException(ErrorCode.NO_AUTH_ERROR, "只能取消自己应用的精选状态");
+        }
+
+        // 2. 必须是精选应用
+        if (!AppConstant.GOOD_APP_PRIORITY.equals(app.getPriority())) {
+            throw new BusinessException(ErrorCode.OPERATION_ERROR, "该应用不是精选应用");
+        }
+
+        // 3. 查找已通过的精选申请
+        QueryWrapper query = QueryWrapper.create()
+            .eq("appId", appId)
+            .eq("status", FeaturedAppStatusEnum.APPROVED.getValue());
+        List<AppFeaturedApplication> approvedList = list(query);
+
+        if (CollUtil.isEmpty(approvedList)) {
+            throw new BusinessException(ErrorCode.NOT_FOUND_ERROR, "未找到已通过的精选申请记录");
+        }
+
+        // 4. 将所有 APPROVED 记录置为 CANCELLED
+        List<AppFeaturedApplication> updateList = approvedList.stream().map(a -> {
+            AppFeaturedApplication update = new AppFeaturedApplication();
+            update.setId(a.getId());
+            update.setStatus(FeaturedAppStatusEnum.CANCELLED.getValue());
+            return update;
+        }).collect(Collectors.toList());
+
+        transactionTemplate.execute(status -> {
+            boolean updateResult = updateBatch(updateList);
+            if (!updateResult) {
+                status.setRollbackOnly();
+                throw new BusinessException(ErrorCode.OPERATION_ERROR, "取消精选失败");
+            }
+            return null;
+        });
+
+        // 5. 重置应用 priority 为 0
+        App appUpdate = new App();
+        appUpdate.setId(appId);
+        appUpdate.setPriority(AppConstant.DEFAULT_APP_PRIORITY);
+        appService.updateById(appUpdate);
+
+        // 6. 驱逐缓存
+        evictGoodAppPageCache();
+
+        // 7. 发布取消精选事件（RAG 语料库监听并移除 embedding）
+        applicationContext.publishEvent(new AppUnfeaturedEvent(this, appId));
+
+        log.info("用户 {} 已取消应用 {} 的精选状态", loginUser.getId(), appId);
+    }
+
+    @Override
     public Page<FeaturedAppApplicationVO> listMyApplications(FeaturedAppQueryRequest queryRequest) {
         // 构建查询条件
         QueryWrapper queryWrapper = QueryWrapper.create()
@@ -456,9 +518,12 @@ public class FeaturedAppApplicationServiceImpl
     }
 
     /**
-     * 批量更新应用优先级
+     * 批量更新应用优先级，并同步 publicChatHistory
+     *
+     * @param appIds 应用ID集合
+     * @param appPublicChatHistoryMap appId → publicChatHistory 映射（仅在审核通过时传入）
      */
-    private void batchUpdateAppPriority(Set<Long> appIds) {
+    private void batchUpdateAppPriority(Set<Long> appIds, Map<Long, Boolean> appPublicChatHistoryMap) {
         if (CollUtil.isEmpty(appIds)) {
             return;
         }
@@ -468,6 +533,10 @@ public class FeaturedAppApplicationServiceImpl
             App app = new App();
             app.setId(appId);
             app.setPriority(AppConstant.GOOD_APP_PRIORITY);
+            // 同步 publicChatHistory（仅在审核通过时有值，内容审核等场景为 null 时不修改）
+            if (appPublicChatHistoryMap != null && appPublicChatHistoryMap.containsKey(appId)) {
+                app.setPublicChatHistory(appPublicChatHistoryMap.get(appId));
+            }
             app.setUpdateTime(LocalDateTime.now());
             updateAppList.add(app);
         }
@@ -512,6 +581,7 @@ public class FeaturedAppApplicationServiceImpl
             vo.setAppId(application.getAppId());
             vo.setUserId(application.getUserId());
             vo.setReason(application.getReason());
+            vo.setPublicChatHistory(application.getPublicChatHistory());
             vo.setStatus(application.getStatus());
             vo.setReviewComment(application.getReviewComment());
             vo.setReviewerId(application.getReviewerId());

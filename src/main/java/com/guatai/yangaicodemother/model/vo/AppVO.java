@@ -72,6 +72,11 @@ public class AppVO implements Serializable {
     private LocalDateTime updateTime;
 
     /**
+     * 是否公开对话过程（精选应用专用）
+     */
+    private Boolean publicChatHistory;
+
+    /**
      * 创建用户信息
      */
     private UserVO user;

@@ -51,6 +51,12 @@ public class AppFeaturedApplication implements Serializable {
     private String reason;
 
     /**
+     * 是否公开对话过程
+     */
+    @Column("public_chat_history")
+    private Boolean publicChatHistory;
+
+    /**
      * 审核状态：PENDING(待审核)/APPROVED(已通过)/REJECTED(已拒绝)/CANCELLED(已撤销)
      */
     private String status;

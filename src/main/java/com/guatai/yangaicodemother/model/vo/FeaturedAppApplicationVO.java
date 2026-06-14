@@ -47,6 +47,11 @@ public class FeaturedAppApplicationVO implements Serializable {
     private String reason;
 
     /**
+     * 是否公开对话过程
+     */
+    private Boolean publicChatHistory;
+
+    /**
      * 审核状态：PENDING/APPROVED/REJECTED/CANCELLED
      */
     private String status;

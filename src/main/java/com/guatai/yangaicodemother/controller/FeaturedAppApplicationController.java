@@ -56,8 +56,9 @@ public class FeaturedAppApplicationController {
         User loginUser = userService.getLoginUser(httpRequest);
         // 执行申请
         Long applicationId = featuredAppApplicationService.applyFeaturedApp(
-            request.getAppId(), 
-            request.getReason(), 
+            request.getAppId(),
+            request.getReason(),
+            request.getPublicChatHistory(),
             loginUser
         );
         return ResultUtils.success(applicationId);
@@ -152,6 +153,22 @@ public class FeaturedAppApplicationController {
                                                HttpServletRequest httpRequest) {
         User adminUser = userService.getLoginUser(httpRequest);
         featuredAppApplicationService.unfeatureApp(appIds, adminUser);
+        return ResultUtils.success(true);
+    }
+
+    /**
+     * 用户自行取消精选状态（仅限应用所有者）
+     *
+     * @param appId 应用ID
+     * @param httpRequest HTTP请求
+     * @return 是否成功
+     */
+    @PostMapping("/cancel/own")
+    public BaseResponse<Boolean> cancelOwnFeaturedStatus(@RequestBody List<Long> appIds,
+                                                          HttpServletRequest httpRequest) {
+        ThrowUtils.throwIf(CollUtil.isEmpty(appIds), ErrorCode.PARAMS_ERROR, "应用ID不能为空");
+        User loginUser = userService.getLoginUser(httpRequest);
+        featuredAppApplicationService.cancelFeaturedStatus(appIds.get(0), loginUser);
         return ResultUtils.success(true);
     }
 

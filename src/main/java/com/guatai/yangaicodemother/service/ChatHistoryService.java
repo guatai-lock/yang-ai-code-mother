@@ -6,6 +6,7 @@ import com.mybatisflex.core.paginate.Page;
 import com.mybatisflex.core.query.QueryWrapper;
 import com.mybatisflex.core.service.IService;
 import com.guatai.yangaicodemother.model.entity.ChatHistory;
+import com.guatai.yangaicodemother.model.vo.ChatHistoryPublicVO;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 
 import java.time.LocalDateTime;
@@ -58,6 +59,17 @@ public interface ChatHistoryService extends IService<ChatHistory> {
      * @param messageIds 选中的消息ID列表（最多200条）
      */
     String exportSelectedChatHistoryAsMarkdown(Long appId, User loginUser, List<Long> messageIds);
+
+    /**
+     * 公开查询精选应用的对话历史（无需登录）
+     *
+     * @param appId          应用ID
+     * @param pageSize       页面大小
+     * @param lastCreateTime 最后一条记录的创建时间
+     * @return 对话历史分页
+     */
+    Page<ChatHistoryPublicVO> listPublicChatHistory(Long appId, int pageSize,
+                                                    LocalDateTime lastCreateTime);
 
     /**
      * 对话记忆初始化时，需要从数据库中加载对话历史到记忆中

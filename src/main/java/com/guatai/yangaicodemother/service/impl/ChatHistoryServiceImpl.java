@@ -15,6 +15,7 @@ import com.mybatisflex.core.query.QueryWrapper;
 import com.mybatisflex.spring.service.impl.ServiceImpl;
 import com.guatai.yangaicodemother.model.entity.ChatHistory;
 import com.guatai.yangaicodemother.mapper.ChatHistoryMapper;
+import com.guatai.yangaicodemother.model.vo.ChatHistoryPublicVO;
 import com.guatai.yangaicodemother.service.ChatHistoryService;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.UserMessage;
@@ -100,6 +101,35 @@ public class ChatHistoryServiceImpl extends ServiceImpl<ChatHistoryMapper, ChatH
         // 查询数据
         return this.page(Page.of(1, pageSize), queryWrapper);
     }
+    @Override
+    public Page<ChatHistoryPublicVO> listPublicChatHistory(Long appId, int pageSize,
+                                                           LocalDateTime lastCreateTime) {
+        ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "应用ID不能为空");
+        ThrowUtils.throwIf(pageSize <= 0 || pageSize > 50, ErrorCode.PARAMS_ERROR, "页面大小必须在1-50之间");
+        // 构建游标查询条件（仅按 appId 和 createTime 过滤，无权限检查）
+        ChatHistoryQueryRequest queryRequest = new ChatHistoryQueryRequest();
+        queryRequest.setAppId(appId);
+        queryRequest.setLastCreateTime(lastCreateTime);
+        QueryWrapper queryWrapper = this.getQueryWrapper(queryRequest);
+        // 查询原始 ChatHistory 数据
+        Page<ChatHistory> chatHistoryPage = this.page(Page.of(1, pageSize), queryWrapper);
+        // 转换为公开 VO（移除 userId 等敏感字段）
+        Page<ChatHistoryPublicVO> voPage = new Page<>(1, pageSize, chatHistoryPage.getTotalRow());
+        List<ChatHistoryPublicVO> voList = chatHistoryPage.getRecords().stream()
+                .map(ch -> {
+                    ChatHistoryPublicVO vo = new ChatHistoryPublicVO();
+                    vo.setId(ch.getId());
+                    vo.setMessage(ch.getMessage());
+                    vo.setMessageType(ch.getMessageType());
+                    vo.setAppId(ch.getAppId());
+                    vo.setCreateTime(ch.getCreateTime());
+                    return vo;
+                })
+                .collect(Collectors.toList());
+        voPage.setRecords(voList);
+        return voPage;
+    }
+
     /**
      * 获取查询包装类
      *
