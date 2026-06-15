@@ -17,11 +17,13 @@ import com.guatai.yangaicodemother.ai.model.message.AiResponseMessage;
 import com.guatai.yangaicodemother.ai.model.message.ToolExecutedMessage;
 import com.guatai.yangaicodemother.ai.model.message.ToolRequestMessage;
 import com.guatai.yangaicodemother.common.AppConstant;
+import com.guatai.yangaicodemother.config.SkillsLoader;
 import com.guatai.yangaicodemother.core.builder.VueProjectBuilder;
 import com.guatai.yangaicodemother.core.parser.CodeParserExecutor;
 import com.guatai.yangaicodemother.core.saver.CodeFileSaverExecutor;
 import com.guatai.yangaicodemother.exception.BusinessException;
 import com.guatai.yangaicodemother.exception.ErrorCode;
+import com.guatai.yangaicodemother.model.entity.SkillMeta;
 import com.guatai.yangaicodemother.model.enums.CodeGenTypeEnum;
 import com.guatai.yangaicodemother.model.vo.AppImageVO;
 import com.guatai.yangaicodemother.service.AppImageService;
@@ -53,19 +55,25 @@ public class AiCodeGeneratorFacade {
     @Resource
     private AppImageService appImageService;
 
+    @Resource
+    private SkillsLoader skillsLoader;
+
     /**
      * 统一入口：根据类型生成并保存代码（流式，使用 appId）
      *
      * @param userMessage     用户提示词
      * @param codeGenTypeEnum 生成类型
      * @param appId           应用 ID
+     * @param skillNames      启用的技能名称列表（可选）
      */
-    public Flux<String> generateAndSaveCodeStream(String userMessage, CodeGenTypeEnum codeGenTypeEnum, Long appId) {
+    public Flux<String> generateAndSaveCodeStream(String userMessage, CodeGenTypeEnum codeGenTypeEnum, Long appId, List<String> skillNames) {
         if (codeGenTypeEnum == null) {
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "生成类型为空");
         }
         // 富化用户消息：注入已上传的图片信息
         String enrichedMessage = enrichWithImageContext(userMessage, appId);
+        // 富化用户消息：注入已启用的技能内容
+        enrichedMessage = enrichWithSkills(enrichedMessage, skillNames);
         // 根据 appId 获取对应的 AiCodeGeneratorService类实例
         AiCodeGeneratorService codeGeneratorService = aiCodeGeneratorServiceFactory.getAiCodeGeneratorService(appId,codeGenTypeEnum);
         return switch (codeGenTypeEnum) {
@@ -95,14 +103,18 @@ public class AiCodeGeneratorFacade {
      *
      * @param userMessage     用户提示词
      * @param codeGenTypeEnum 生成类型
+     * @param appId           应用 ID
+     * @param skillNames      启用的技能名称列表（可选）
      * @return 保存的目录
      */
-    public File generateAndSaveCode(String userMessage, CodeGenTypeEnum codeGenTypeEnum, Long appId) {
+    public File generateAndSaveCode(String userMessage, CodeGenTypeEnum codeGenTypeEnum, Long appId, List<String> skillNames) {
         if (codeGenTypeEnum == null) {
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "生成类型为空");
         }
         // 富化用户消息：注入已上传的图片信息
         String enrichedMessage = enrichWithImageContext(userMessage, appId);
+        // 富化用户消息：注入已启用的技能内容
+        enrichedMessage = enrichWithSkills(enrichedMessage, skillNames);
         // 根据 appId 获取对应的 AiCodeGeneratorService
         AiCodeGeneratorService codeGeneratorService = aiCodeGeneratorServiceFactory.getAiCodeGeneratorService(appId);
         return switch (codeGenTypeEnum) {
@@ -150,6 +162,34 @@ public class AiCodeGeneratorFacade {
             return sb.toString();
         } catch (Exception e) {
             log.warn("获取上传图片信息失败，跳过图片上下文注入: {}", e.getMessage());
+            return userMessage;
+        }
+    }
+
+    /**
+     * 富化用户消息：在用户消息前注入已启用的设计规范/最佳实践技能内容
+     */
+    private String enrichWithSkills(String userMessage, List<String> skillNames) {
+        if (CollUtil.isEmpty(skillNames)) {
+            return userMessage;
+        }
+        try {
+            StringBuilder sb = new StringBuilder();
+            sb.append("【已启用的设计规范与最佳实践】\n");
+            sb.append("请严格遵守以下规范生成代码：\n\n");
+            for (String skillName : skillNames) {
+                SkillMeta skill = skillsLoader.getSkillByName(skillName);
+                if (skill != null) {
+                    sb.append("=== ").append(skill.getName()).append(" ===\n");
+                    sb.append(skill.getContent()).append("\n\n");
+                } else {
+                    log.warn("技能不存在，跳过: {}", skillName);
+                }
+            }
+            sb.append("用户需求：").append(userMessage);
+            return sb.toString();
+        } catch (Exception e) {
+            log.warn("技能上下文注入失败，跳过: {}", e.getMessage());
             return userMessage;
         }
     }

@@ -206,7 +206,7 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
                 .orderBy(sortField, "ascend".equals(sortOrder));
     }
     @Override
-    public Flux<String> chatToGenCode(Long appId, String message, User loginUser, Boolean ragEnabled) {
+    public Flux<String> chatToGenCode(Long appId, String message, User loginUser, Boolean ragEnabled, List<String> skillNames) {
         // 1. 参数校验
         ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "应用 ID 不能为空");
         ThrowUtils.throwIf(StrUtil.isBlank(message), ErrorCode.PARAMS_ERROR, "用户消息不能为空");
@@ -250,7 +250,7 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
         // 将原始消息保存到对话历史后，使用重写后的安全版本调用 AI
         String safeMessage = promptRewriteService.rewrite(message);
         // 9. 调用 AI 生成代码（流式）
-        Flux<String> codeStream = aiCodeGeneratorFacade.generateAndSaveCodeStream(safeMessage, codeGenTypeEnum, appId);
+        Flux<String> codeStream = aiCodeGeneratorFacade.generateAndSaveCodeStream(safeMessage, codeGenTypeEnum, appId, skillNames);
     // 10. 收集 AI 响应内容并在完成后记录到对话历史
         return streamHandlerExecutor.doExecute(codeStream, chatHistoryService,
                 appId, loginUser, codeGenTypeEnum)

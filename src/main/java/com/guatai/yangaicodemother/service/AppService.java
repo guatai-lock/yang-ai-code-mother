@@ -53,13 +53,14 @@ public interface AppService extends IService<App> {
     /**
      * 根据应用id和消息生成代码
      *
-     * @param appId 应用id
-     * @param message 消息
-     * @param loginUser 登录用户
+     * @param appId      应用id
+     * @param message    消息
+     * @param loginUser  登录用户
      * @param ragEnabled 是否启用 RAG 知识库参考
+     * @param skillNames 启用的技能名称列表（可选）
      * @return
      */
-    Flux<String> chatToGenCode(Long appId, String message, User loginUser, Boolean ragEnabled);
+    Flux<String> chatToGenCode(Long appId, String message, User loginUser, Boolean ragEnabled, List<String> skillNames);
 
     /**
      * 部署应用

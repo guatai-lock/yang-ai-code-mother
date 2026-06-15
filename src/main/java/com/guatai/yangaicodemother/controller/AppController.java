@@ -66,14 +66,17 @@ public class AppController {
     public Flux<ServerSentEvent<String>> chatToGenCode(@RequestParam Long appId,
                                                        @RequestParam String message,
                                                        @RequestParam(required = false, defaultValue = "false") Boolean ragEnabled,
+                                                       @RequestParam(required = false) String skills,
                                                        HttpServletRequest request) {
     // 参数校验
         ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "应用ID无效");
         ThrowUtils.throwIf(StrUtil.isBlank(message), ErrorCode.PARAMS_ERROR, "用户消息不能为空");
+        // 解析技能参数
+        List<String> skillList = StrUtil.isBlank(skills) ? List.of() : StrUtil.split(skills, ",");
         // 获取当前登录用户
         User loginUser = userService.getLoginUser(request);
         // 调用服务生成代码（流式）
-        Flux<String> contentFlux = appService.chatToGenCode(appId, message, loginUser, ragEnabled);
+        Flux<String> contentFlux = appService.chatToGenCode(appId, message, loginUser, ragEnabled, skillList);
         return contentFlux
                 .map(chunk -> {
                     // 将内容包装成JSON对象
