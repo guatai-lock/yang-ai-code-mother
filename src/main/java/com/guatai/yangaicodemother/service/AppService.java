@@ -2,6 +2,7 @@ package com.guatai.yangaicodemother.service;
 
 import com.guatai.yangaicodemother.model.dto.app.AppAddRequest;
 import com.guatai.yangaicodemother.model.dto.app.AppQueryRequest;
+import com.guatai.yangaicodemother.model.dto.app.ChatToGenCodeRequest;
 import com.guatai.yangaicodemother.model.entity.User;
 import com.guatai.yangaicodemother.model.vo.AppVO;
 import com.guatai.yangaicodemother.model.vo.DeployStatusVO;
@@ -51,16 +52,16 @@ public interface AppService extends IService<App> {
     QueryWrapper getQueryWrapper(AppQueryRequest appQueryRequest);
 
     /**
-     * 根据应用id和消息生成代码
+     * 根据应用 id 和消息生成代码（流式 SSE）
+     * <p>
+     * 图片统一由前端在对话前通过独立接口上传并保存到 app_image 表，
+     * 后端通过 {@code enrichWithImageContext} 自动从 DB 拉取图片信息注入提示词。
      *
-     * @param appId      应用id
-     * @param message    消息
-     * @param loginUser  登录用户
-     * @param ragEnabled 是否启用 RAG 知识库参考
-     * @param skillNames 启用的技能名称列表（可选）
-     * @return
+     * @param request   聊天请求 DTO（含 appId、message、ragEnabled、skillNames）
+     * @param loginUser 登录用户（由 Controller 从 Session 获取）
+     * @return 代码生成流
      */
-    Flux<String> chatToGenCode(Long appId, String message, User loginUser, Boolean ragEnabled, List<String> skillNames);
+    Flux<String> chatToGenCode(ChatToGenCodeRequest request, User loginUser);
 
     /**
      * 部署应用

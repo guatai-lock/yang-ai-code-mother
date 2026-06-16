@@ -8,6 +8,7 @@ import com.guatai.yangaicodemother.exception.BusinessException;
 import com.guatai.yangaicodemother.exception.ThrowUtils;
 import com.guatai.yangaicodemother.exception.ErrorCode;
 import com.guatai.yangaicodemother.model.dto.app.*;
+import com.guatai.yangaicodemother.model.dto.app.ChatToGenCodeRequest;
 import com.guatai.yangaicodemother.model.entity.App;
 import com.guatai.yangaicodemother.model.entity.User;
 import com.guatai.yangaicodemother.model.enums.DeployStatusEnum;
@@ -55,6 +56,10 @@ public class AppController {
 
     /**
      * 应用聊天生成代码（流式 SSE）
+     * <p>
+     * 使用 GET + EventSource（浏览器原生 SSE 支持）。
+     * 图片统一由前端在对话前通过独立接口上传到 COS 并保存到 app_image 表，
+     * 后端通过 {@code enrichWithImageContext} 自动从 DB 拉取并注入提示词。
      *
      * @param appId   应用 ID
      * @param message 用户消息
@@ -68,18 +73,21 @@ public class AppController {
                                                        @RequestParam(required = false, defaultValue = "false") Boolean ragEnabled,
                                                        @RequestParam(required = false) String skills,
                                                        HttpServletRequest request) {
-    // 参数校验
+        // 参数校验
         ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "应用ID无效");
         ThrowUtils.throwIf(StrUtil.isBlank(message), ErrorCode.PARAMS_ERROR, "用户消息不能为空");
-        // 解析技能参数
-        List<String> skillList = StrUtil.isBlank(skills) ? List.of() : StrUtil.split(skills, ",");
+        // 构建 DTO
+        ChatToGenCodeRequest chatRequest = new ChatToGenCodeRequest();
+        chatRequest.setAppId(appId);
+        chatRequest.setMessage(message);
+        chatRequest.setRagEnabled(ragEnabled);
+        chatRequest.setSkillNames(StrUtil.isBlank(skills) ? List.of() : StrUtil.split(skills, ","));
         // 获取当前登录用户
         User loginUser = userService.getLoginUser(request);
         // 调用服务生成代码（流式）
-        Flux<String> contentFlux = appService.chatToGenCode(appId, message, loginUser, ragEnabled, skillList);
+        Flux<String> contentFlux = appService.chatToGenCode(chatRequest, loginUser);
         return contentFlux
                 .map(chunk -> {
-                    // 将内容包装成JSON对象
                     Map<String, String> wrapper = Map.of("d", chunk);
                     String jsonData = JSONUtil.toJsonStr(wrapper);
                     return ServerSentEvent.<String>builder()
@@ -87,7 +95,6 @@ public class AppController {
                             .build();
                 })
                 .concatWith(Mono.just(
-                        // 发送结束事件
                         ServerSentEvent.<String>builder()
                                 .event("done")
                                 .data("")

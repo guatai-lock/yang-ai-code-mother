@@ -45,4 +45,21 @@ public interface AppImageService {
      * @param appId 应用ID
      */
     void deleteByAppId(Long appId);
+
+    /**
+     * 保存聊天上传的图片记录（图片已通过 CosManager 上传到 COS）
+     * <p>
+     * 用于在聊天过程中上传图片时，直接将图片信息记录到 app_image 表，
+     * 避免重复上传到 COS。保存后，
+     * {@link com.guatai.yangaicodemother.core.AiCodeGeneratorFacade#enrichWithImageContext}
+     * 会在后续对话中自动注入这些图片。
+     *
+     * @param cosUrl       图片的 COS 访问 URL
+     * @param originalName 原始文件名
+     * @param fileSize     文件大小（字节）
+     * @param fileType     文件类型（扩展名）
+     * @param appId        应用ID
+     * @param userId       用户ID
+     */
+    void saveChatImageRecord(String cosUrl, String originalName, Long fileSize, String fileType, Long appId, Long userId);
 }

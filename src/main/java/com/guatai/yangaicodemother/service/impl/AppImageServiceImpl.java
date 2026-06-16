@@ -85,19 +85,8 @@ public class AppImageServiceImpl implements AppImageService {
             ThrowUtils.throwIf(StrUtil.isBlank(cosUrl), ErrorCode.OPERATION_ERROR, "图片上传到对象存储失败");
 
             // 7. 保存记录到数据库
-            LocalDateTime now = LocalDateTime.now();
-            AppImage appImage = AppImage.builder()
-                    .appId(appId)
-                    .userId(loginUser.getId())
-                    .originalName(originalFilename)
-                    .cosUrl(cosUrl)
-                    .fileSize(file.getSize())
-                    .fileType(ext.toLowerCase())
-                    .description(description)
-                    .createTime(now)
-                    .updateTime(now)
-                    .build();
-            appImageMapper.insert(appImage);
+            AppImage appImage = insertImageRecord(appId, loginUser.getId(), originalFilename, cosUrl,
+                    file.getSize(), ext.toLowerCase(), description);
 
             log.info("图片上传成功, appId: {}, cosUrl: {}, size: {}", appId, cosUrl, file.getSize());
 
@@ -141,6 +130,20 @@ public class AppImageServiceImpl implements AppImageService {
     }
 
     @Override
+    public void saveChatImageRecord(String cosUrl, String originalName, Long fileSize, String fileType, Long appId, Long userId) {
+        if (StrUtil.isBlank(cosUrl) || appId == null || userId == null) {
+            log.warn("保存聊天图片记录参数不完整，跳过");
+            return;
+        }
+        try {
+            insertImageRecord(appId, userId, originalName, cosUrl, fileSize, fileType, null);
+            log.info("聊天图片记录已保存, appId: {}, cosUrl: {}", appId, cosUrl);
+        } catch (Exception e) {
+            log.warn("保存聊天图片记录失败: {}", e.getMessage());
+        }
+    }
+
+    @Override
     public void deleteByAppId(Long appId) {
         if (appId == null || appId <= 0) {
             return;
@@ -149,6 +152,27 @@ public class AppImageServiceImpl implements AppImageService {
                 .eq("appId", appId);
         appImageMapper.deleteByQuery(queryWrapper);
         log.info("应用图片记录已清理, appId: {}", appId);
+    }
+
+    /**
+     * 构建并插入图片记录，返回含自增 ID 的实体
+     */
+    private AppImage insertImageRecord(Long appId, Long userId, String originalName, String cosUrl,
+                                       Long fileSize, String fileType, String description) {
+        LocalDateTime now = LocalDateTime.now();
+        AppImage appImage = AppImage.builder()
+                .appId(appId)
+                .userId(userId)
+                .originalName(originalName)
+                .cosUrl(cosUrl)
+                .fileSize(fileSize)
+                .fileType(fileType)
+                .description(description)
+                .createTime(now)
+                .updateTime(now)
+                .build();
+        appImageMapper.insert(appImage);
+        return appImage;
     }
 
     private AppImageVO convertToVO(AppImage appImage) {

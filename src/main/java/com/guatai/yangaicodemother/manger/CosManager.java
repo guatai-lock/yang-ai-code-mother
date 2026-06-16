@@ -12,7 +12,6 @@ import java.io.File;
 
 /**
  * COS对象存储管理器
- *
  */
 @Component
 @Slf4j
@@ -54,6 +53,19 @@ public class CosManager {
         } else {
             log.error("文件上传COS失败，返回结果为空");
             return null;
+        }
+    }
+
+    /**
+     * 删除临时文件
+     */
+    public void deleteTempFile(File file) {
+        if (file == null) {
+            return;
+        }
+        boolean deleteResult = file.delete();
+        if (!deleteResult) {
+            log.error("file delete error, filepath = {}", file.getAbsolutePath());
         }
     }
 }

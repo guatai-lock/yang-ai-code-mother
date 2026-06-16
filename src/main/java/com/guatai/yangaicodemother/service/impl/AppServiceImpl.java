@@ -20,6 +20,7 @@ import com.guatai.yangaicodemother.exception.ThrowUtils;
 import com.guatai.yangaicodemother.event.AppDeletedEvent;
 import com.guatai.yangaicodemother.model.dto.app.AppAddRequest;
 import com.guatai.yangaicodemother.model.dto.app.AppQueryRequest;
+import com.guatai.yangaicodemother.model.dto.app.ChatToGenCodeRequest;
 import com.guatai.yangaicodemother.model.entity.User;
 import com.guatai.yangaicodemother.model.enums.ChatHistoryMessageTypeEnum;
 import com.guatai.yangaicodemother.model.enums.CodeGenTypeEnum;
@@ -206,8 +207,10 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
                 .orderBy(sortField, "ascend".equals(sortOrder));
     }
     @Override
-    public Flux<String> chatToGenCode(Long appId, String message, User loginUser, Boolean ragEnabled, List<String> skillNames) {
+    public Flux<String> chatToGenCode(ChatToGenCodeRequest request, User loginUser) {
         // 1. 参数校验
+        Long appId = request.getAppId();
+        String message = request.getMessage();
         ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "应用 ID 不能为空");
         ThrowUtils.throwIf(StrUtil.isBlank(message), ErrorCode.PARAMS_ERROR, "用户消息不能为空");
         // 2. 查询应用信息
@@ -227,7 +230,7 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "不支持的代码生成类型");
         }
         // 5. 设置 RAG 开关（默认关闭，仅当 ragEnabled=true 时启用）
-        boolean ragActive = Boolean.TRUE.equals(ragEnabled);
+        boolean ragActive = Boolean.TRUE.equals(request.getRagEnabled());
         RagSwitchHolder.setEnabled(ragActive);
         // 6. 通过校验后，添加用户消息到对话历(保存到数据库)
         chatHistoryService.addChatMessage(appId, message,
@@ -250,7 +253,7 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
         // 将原始消息保存到对话历史后，使用重写后的安全版本调用 AI
         String safeMessage = promptRewriteService.rewrite(message);
         // 9. 调用 AI 生成代码（流式）
-        Flux<String> codeStream = aiCodeGeneratorFacade.generateAndSaveCodeStream(safeMessage, codeGenTypeEnum, appId, skillNames);
+        Flux<String> codeStream = aiCodeGeneratorFacade.generateAndSaveCodeStream(safeMessage, codeGenTypeEnum, appId, request.getSkillNames());
     // 10. 收集 AI 响应内容并在完成后记录到对话历史
         return streamHandlerExecutor.doExecute(codeStream, chatHistoryService,
                 appId, loginUser, codeGenTypeEnum)
@@ -286,6 +289,7 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
                 )
                 ;
     }
+
     @Override
     public String deployApp(Long appId, User loginUser) {
         // 1. 参数校验
@@ -954,7 +958,6 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
         try {
             File sourceDir = new File(sourcePath);
             ThrowUtils.throwIf(!sourceDir.exists(), ErrorCode.SYSTEM_ERROR, "部署目录不存在");
-
             // 移动目录到归档
             FileUtil.move(sourceDir, new File(archivePath), true);
             log.info("应用部署目录已归档：{}", archivePath);

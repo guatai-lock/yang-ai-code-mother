@@ -4,8 +4,12 @@ spring:
   datasource:
       driver-class-name: com.mysql.cj.jdbc.Driver
       url: jdbc:mysql://localhost:3306/yang_ai_code_mother
-      username: 
-      password: 
+      username:
+      password:
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 50MB
   profiles:
     active: local
 server:
@@ -22,3 +26,9 @@ knife4j:
   enable: true
   setting:
     language: zh_cn
+rag:
+  enabled: true
+  max-results: 3
+  min-score: 0.5
+  persistence-path: ${user.dir}/tmp/rag_store.json
+  embedding-model-name: BgeSmallZhV15

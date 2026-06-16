@@ -8,6 +8,7 @@ package com.guatai.yangaicodemother.core;
  */
 
 import cn.hutool.core.collection.CollUtil;
+import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONUtil;
 import com.guatai.yangaicodemother.ai.AiCodeGeneratorService;
 import com.guatai.yangaicodemother.ai.AiCodeGeneratorServiceFactory;
@@ -59,7 +60,7 @@ public class AiCodeGeneratorFacade {
     private SkillsLoader skillsLoader;
 
     /**
-     * 统一入口：根据类型生成并保存代码（流式，使用 appId）
+     * 统一入口：根据类型生成并保存代码（流式，纯文本消息）
      *
      * @param userMessage     用户提示词
      * @param codeGenTypeEnum 生成类型
@@ -70,7 +71,7 @@ public class AiCodeGeneratorFacade {
         if (codeGenTypeEnum == null) {
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "生成类型为空");
         }
-        // 富化用户消息：注入已上传的图片信息
+        // 以文本形式注入已上传的图片资源信息（URL和描述），供 AI 在代码中直接引用
         String enrichedMessage = enrichWithImageContext(userMessage, appId);
         // 富化用户消息：注入已启用的技能内容
         enrichedMessage = enrichWithSkills(enrichedMessage, skillNames);
@@ -98,6 +99,7 @@ public class AiCodeGeneratorFacade {
             }
         };
     }
+
     /**
      * 统一入口：根据类型生成并保存代码（使用 appId）非流式返回
      *
@@ -264,4 +266,3 @@ public class AiCodeGeneratorFacade {
     }
 
 }
-
