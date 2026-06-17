@@ -11,7 +11,7 @@ import reactor.core.publisher.Flux;
  * 对流式响应进行业务层处理（记录对话历史、前端展示格式化）
  */
 @Slf4j
-public class SimpleTextStreamHandler {
+public class SimpleTextStreamHandler implements StreamHandler {
 
     /**
      * 处理传统流（HTML, MULTI_FILE）

@@ -35,7 +35,7 @@ class YangAiCodeMotherApplicationTests {
         @Test
         void parseHtmlCode() {
             Flux<String> stream = aiCodeGeneratorFacade
-                    .generateAndSaveCodeStream("生成外卖平台页面，一百行代码以内", CodeGenTypeEnum.MULTI_FILE,123l);
+                    .generateAndSaveCodeStream("生成外卖平台页面，一百行代码以内", CodeGenTypeEnum.MULTI_FILE,123l, null);
             //流式输出测试记得阻塞测试
             List<String> block = stream.collectList().block();
             Assertions.assertNotNull(block);
@@ -44,7 +44,7 @@ class YangAiCodeMotherApplicationTests {
     void generateVueProjectCodeStream() {
         Flux<String> codeStream = aiCodeGeneratorFacade.generateAndSaveCodeStream(
                 "简单的任务记录网站，总代码量不超过 200 行",
-                CodeGenTypeEnum.VUE_PROJECT, 123L);
+                CodeGenTypeEnum.VUE_PROJECT, 123L, null);
         // 阻塞等待所有数据收集完成
         List<String> result = codeStream.collectList().block();
         // 验证结果

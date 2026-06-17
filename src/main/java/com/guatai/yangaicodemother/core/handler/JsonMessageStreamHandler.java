@@ -23,7 +23,7 @@ import java.util.Set;
  */
 @Slf4j
 @Component
-public class JsonMessageStreamHandler {
+public class JsonMessageStreamHandler implements StreamHandler {
     @Resource
     private VueProjectBuilder vueProjectBuilder;
 

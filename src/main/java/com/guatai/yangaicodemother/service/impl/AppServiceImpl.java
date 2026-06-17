@@ -289,7 +289,6 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
                 )
                 ;
     }
-
     @Override
     public String deployApp(Long appId, User loginUser) {
         // 1. 参数校验
