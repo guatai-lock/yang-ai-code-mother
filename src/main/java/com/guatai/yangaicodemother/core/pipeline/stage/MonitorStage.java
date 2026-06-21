@@ -2,27 +2,32 @@ package com.guatai.yangaicodemother.core.pipeline.stage;
 
 import com.guatai.yangaicodemother.core.pipeline.GenStage;
 import com.guatai.yangaicodemother.core.pipeline.PipelineContext;
+import com.guatai.yangaicodemother.core.pipeline.lifecycle.MonitorContextLifecycle;
 import com.guatai.yangaicodemother.monitor.MonitorContext;
 import com.guatai.yangaicodemother.monitor.MonitorContextHolder;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
-import reactor.core.publisher.SignalType;
 
 /**
- * 监控上下文管理 Stage
+ * 监控上下文构建 Stage
  * <p>
- * 构建并设置 {@link MonitorContext} 到 {@link MonitorContextHolder}（ThreadLocal），
- * 用于 Micrometer 指标采集。在 cleanup 中清理上下文，防止内存泄漏。
+ * 构建 {@link MonitorContext} 对象并存入 {@link PipelineContext}，
+ * 供后续 {@link MonitorContextLifecycle} 设置到 {@link MonitorContextHolder}（ThreadLocal）。
  * </p>
  * <p>
- * 注意：Spring 异步 Servlet 环境下 ThreadLocal 可能丢失上下文。
- * {@code GenPipeline} 的 {@code doOnSubscribe} 会从 {@link PipelineContext#getMonitorContext()}
- * 中恢复上下文，覆盖异步线程路径。
+ * <b>ThreadLocal 生命周期已迁移到 {@link MonitorContextLifecycle}</b>：
+ * <ul>
+ *   <li>本 Stage 只负责构建监控上下文对象</li>
+ *   <li>{@link MonitorContextLifecycle#setup(PipelineContext)} 设置 ThreadLocal</li>
+ *   <li>{@link MonitorContextLifecycle#clear(PipelineContext, SignalType)} 清理 ThreadLocal</li>
+ *   <li>{@link MonitorContextLifecycle#restore(PipelineContext)} 在异步线程中恢复</li>
+ * </ul>
  * </p>
  *
+ * @see MonitorContext
  * @see MonitorContextHolder
- * @see RagSwitchStage
+ * @see MonitorContextLifecycle
  */
 @Slf4j
 @Component
@@ -37,15 +42,8 @@ public class MonitorStage implements GenStage {
                 .build();
 
         context.setMonitorContext(monitorContext);
-        MonitorContextHolder.setContext(monitorContext);
 
-        log.debug("MonitorContext 已设置, appId={}, userId={}",
+        log.debug("MonitorContext 已构建, appId={}, userId={}",
                 context.getAppId(), context.getLoginUser().getId());
-    }
-
-    @Override
-    public void cleanup(PipelineContext context, SignalType signalType) {
-        MonitorContextHolder.clearContext();
-        log.debug("MonitorContext 已清理, appId={}", context.getAppId());
     }
 }

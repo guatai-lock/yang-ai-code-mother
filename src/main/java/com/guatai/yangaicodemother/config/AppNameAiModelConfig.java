@@ -34,6 +34,11 @@ public class AppNameAiModelConfig {
     private Boolean logResponses = false;
 
     /**
+     * HTTP 请求超时时间（默认 300 秒，复杂提示词需要更长处理时间）
+     */
+    private Duration timeout = Duration.ofSeconds(300);
+
+    /**
      * 创建用于应用名称生成的 ChatModel（多例模式）
      */
     @Bean
@@ -47,7 +52,7 @@ public class AppNameAiModelConfig {
                 .temperature(temperature)
                 .logRequests(logRequests)
                 .logResponses(logResponses)
-                .timeout(Duration.ofSeconds(120))
+                .timeout(timeout)
                 .build();
     }
 }

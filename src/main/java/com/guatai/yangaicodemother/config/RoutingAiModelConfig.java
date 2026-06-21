@@ -8,6 +8,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Scope;
 
+import java.time.Duration;
+
 @Configuration
 @ConfigurationProperties(prefix = "langchain4j.open-ai.routing-chat-model")
 @Data
@@ -28,6 +30,11 @@ public class RoutingAiModelConfig {
     private Boolean logResponses = false;
 
     /**
+     * HTTP 请求超时时间（默认 120 秒）
+     */
+    private Duration timeout = Duration.ofSeconds(120);
+
+    /**
      * 创建用于路由判断的ChatModel
      */
     @Bean
@@ -41,6 +48,7 @@ public class RoutingAiModelConfig {
                 .temperature(temperature)
                 .logRequests(logRequests)
                 .logResponses(logResponses)
+                .timeout(timeout)
                 .build();
     }
 }
