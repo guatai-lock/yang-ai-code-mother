@@ -10,9 +10,8 @@ import com.guatai.yangaicodemother.ai.AiCodeGenTypeRoutingService;
 import com.guatai.yangaicodemother.ai.AiCodeGenTypeRoutingServiceFactory;
 import com.guatai.yangaicodemother.ai.guardrail.PromptRewriteService;
 import com.guatai.yangaicodemother.common.AppConstant;
-import com.guatai.yangaicodemother.core.AiCodeGeneratorFacade;
 import com.guatai.yangaicodemother.core.builder.VueProjectBuilder;
-import com.guatai.yangaicodemother.core.handler.StreamHandlerExecutor;
+import com.guatai.yangaicodemother.core.pipeline.GenPipeline;
 import com.guatai.yangaicodemother.event.AppDeployedEvent;
 import com.guatai.yangaicodemother.exception.BusinessException;
 import com.guatai.yangaicodemother.exception.ErrorCode;
@@ -22,18 +21,13 @@ import com.guatai.yangaicodemother.model.dto.app.AppAddRequest;
 import com.guatai.yangaicodemother.model.dto.app.AppQueryRequest;
 import com.guatai.yangaicodemother.model.dto.app.ChatToGenCodeRequest;
 import com.guatai.yangaicodemother.model.entity.User;
-import com.guatai.yangaicodemother.model.enums.ChatHistoryMessageTypeEnum;
 import com.guatai.yangaicodemother.model.enums.CodeGenTypeEnum;
 import com.guatai.yangaicodemother.model.enums.DeployStatusEnum;
 import com.guatai.yangaicodemother.model.vo.AppVO;
 import com.guatai.yangaicodemother.model.vo.DeployStatusVO;
 import com.guatai.yangaicodemother.model.vo.UserVO;
 import com.guatai.yangaicodemother.monitor.AiModelMetricsCollector;
-import com.guatai.yangaicodemother.monitor.MonitorContext;
-import com.guatai.yangaicodemother.monitor.MonitorContextHolder;
-import com.guatai.yangaicodemother.rag.RagSwitchHolder;
 import com.guatai.yangaicodemother.service.ChatHistoryService;
-import com.guatai.yangaicodemother.service.FeaturedAppApplicationService;
 import com.guatai.yangaicodemother.service.ScreenshotService;
 import com.guatai.yangaicodemother.service.UserService;
 import com.mybatisflex.core.query.QueryWrapper;
@@ -52,7 +46,6 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.SignalType;
 import java.io.File;
 import java.io.Serializable;
 import java.time.LocalDateTime;
@@ -75,14 +68,11 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
     private UserService userService;
 
     @Resource
-    private AiCodeGeneratorFacade aiCodeGeneratorFacade;
+    private GenPipeline genPipeline;
 
     @Resource
     @Lazy
     private ChatHistoryService chatHistoryService;
-
-    @Resource
-    private StreamHandlerExecutor streamHandlerExecutor;
 
     @Resource
     private VueProjectBuilder vueProjectBuilder;
@@ -107,10 +97,6 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
 
     @Resource
     private PromptRewriteService promptRewriteService;
-
-    @Resource
-    @Lazy
-    private FeaturedAppApplicationService featuredAppApplicationService;
 
     @Resource
     private AiModelMetricsCollector metricsCollector;
@@ -208,86 +194,7 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App>  implements AppS
     }
     @Override
     public Flux<String> chatToGenCode(ChatToGenCodeRequest request, User loginUser) {
-        // 1. 参数校验
-        Long appId = request.getAppId();
-        String message = request.getMessage();
-        ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "应用 ID 不能为空");
-        ThrowUtils.throwIf(StrUtil.isBlank(message), ErrorCode.PARAMS_ERROR, "用户消息不能为空");
-        // 2. 查询应用信息
-        App app = this.getById(appId);
-        ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR, "应用不存在");
-        // 2.5 捕获当前应用状态，用于 doFinally 中判断是否触发内容审核
-        Integer currentPriority = app.getPriority();
-        String currentDeployStatus = app.getDeployStatus();
-        // 3. 验证用户是否有权限访问该应用，仅本人可以生成代码
-        if (!app.getUserId().equals(loginUser.getId())) {
-            throw new BusinessException(ErrorCode.NO_AUTH_ERROR, "无权限访问该应用");
-        }
-        // 4. 获取应用的代码生成类型
-        String codeGenTypeStr = app.getCodeGenType();
-        CodeGenTypeEnum codeGenTypeEnum = CodeGenTypeEnum.getEnumByValue(codeGenTypeStr);
-        if (codeGenTypeEnum == null) {
-            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "不支持的代码生成类型");
-        }
-        // 5. 设置 RAG 开关（默认关闭，仅当 ragEnabled=true 时启用）
-        boolean ragActive = Boolean.TRUE.equals(request.getRagEnabled());
-        RagSwitchHolder.setEnabled(ragActive);
-        // 6. 通过校验后，添加用户消息到对话历(保存到数据库)
-        chatHistoryService.addChatMessage(appId, message,
-                ChatHistoryMessageTypeEnum.USER.getValue(),
-                loginUser.getId());
-        // 6.5 递增应用对话轮次
-        App roundUpdate = new App();
-        roundUpdate.setId(appId);
-        roundUpdate.setConversationRound(app.getConversationRound() == null ? 1 : app.getConversationRound() + 1);
-        this.updateById(roundUpdate);
-        // 7. 构建并设置监控上下文
-        //    inline 设置：覆盖 Hot Flux（HTML/MULTI_FILE），listener.onRequest 在代理调用时同步触发（请求线程）
-        //    doOnSubscribe 设置（备份）：覆盖 Lazy Flux（VUE_PROJECT），listener.onRequest 在订阅时触发
-        MonitorContext monitorContext = MonitorContext.builder()
-                .appId(appId.toString())
-                .userId(loginUser.getId().toString())
-                .build();
-        MonitorContextHolder.setContext(monitorContext);
-        // 8. 互轨机制：提示词重写（外轨 — 主动修复）
-        // 将原始消息保存到对话历史后，使用重写后的安全版本调用 AI
-        String safeMessage = promptRewriteService.rewrite(message);
-        // 9. 调用 AI 生成代码（流式）
-        Flux<String> codeStream = aiCodeGeneratorFacade.generateAndSaveCodeStream(safeMessage, codeGenTypeEnum, appId, request.getSkillNames());
-    // 10. 收集 AI 响应内容并在完成后记录到对话历史
-        return streamHandlerExecutor.doExecute(codeStream, chatHistoryService,
-                appId, loginUser, codeGenTypeEnum)
-                .doOnSubscribe(s ->
-                        // 在订阅线程上设置监控上下文（覆盖 Lazy Flux 路径：VUE_PROJECT）
-                        MonitorContextHolder.setContext(monitorContext)
-                )
-                .doFinally(
-                        signalType -> {
-                            // 清理监控上下文(无论成功/失败/取消)
-                            MonitorContextHolder.clearContext();
-                            // 清理 RAG 开关状态
-                            RagSwitchHolder.clear();
-
-                            // 精选已部署应用 → 代码生成成功后提交内容重新审核，旧版本继续在线
-                            // 仅在 ON_COMPLETE 时触发（ON_ERROR / ON_CANCEL 不创建虚假的审核申请）
-                            if (signalType == SignalType.ON_COMPLETE
-                                    && AppConstant.GOOD_APP_PRIORITY.equals(currentPriority)
-                                    && DeployStatusEnum.ONLINE.getValue().equals(currentDeployStatus)) {
-                                log.info("精选应用代码生成完成，异步提交内容重新审核: appId={}", appId);
-                                CompletableFuture.runAsync(() -> {
-                                    try {
-                                        featuredAppApplicationService.requestContentReview(appId, loginUser);
-                                    } catch (BusinessException e) {
-                                        // 已有待审核申请等预期内的异常，只记日志
-                                        log.info("精选应用提交内容审核跳过: appId={}, reason={}", appId, e.getMessage());
-                                    } catch (Exception e) {
-                                        log.error("精选应用提交内容审核失败: appId={}", appId, e);
-                                    }
-                                }, virtualThreadExecutor);
-                            }
-                        }
-                )
-                ;
+        return genPipeline.execute(request, loginUser);
     }
     @Override
     public String deployApp(Long appId, User loginUser) {
